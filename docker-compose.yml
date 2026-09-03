@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: scanner
+      POSTGRES_PASSWORD: scanner
+      POSTGRES_DB: scanner
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://scanner:scanner@db:5432/scanner
+      JWT_SECRET: change-me-to-a-long-random-value
+    depends_on:
+      - db
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+volumes:
+  pgdata:

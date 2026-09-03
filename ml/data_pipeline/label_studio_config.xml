@@ -1,0 +1,12 @@
+<View>
+  <Image name="label" value="$image"/>
+  <Labels name="entity" toName="label">
+    <Label value="MRP" background="green"/>
+    <Label value="NET_QTY" background="blue"/>
+    <Label value="MFG_DATE" background="orange"/>
+    <Label value="EXP_DATE" background="red"/>
+    <Label value="MANUFACTURER" background="purple"/>
+    <Label value="CARE" background="pink"/>
+  </Labels>
+  <Text name="ocr" value="$text"/>
+</View>
