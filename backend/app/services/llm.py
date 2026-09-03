@@ -49,9 +49,7 @@ def build_explain_prompt(
         )
     if warnings:
         lines.append("Warnings: " + "; ".join(warnings))
-    lines.append(
-        "Keep it under 150 words. Do not invent rule text beyond what is listed."
-    )
+    lines.append("Keep it under 150 words. Do not invent rule text beyond what is listed.")
     return "\n".join(lines)
 
 

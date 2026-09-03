@@ -141,10 +141,14 @@ def run_ocr(image_bytes: bytes) -> OcrResult:
             alt = _fl_ocr(image_bytes)
         except Exception:
             alt = None
-        if alt and alt.text and (
-            primary is None
-            or primary.text.strip() == ""
-            or (primary.confidence < 60 and len(alt.text) > len(primary.text))
+        if (
+            alt
+            and alt.text
+            and (
+                primary is None
+                or primary.text.strip() == ""
+                or (primary.confidence < 60 and len(alt.text) > len(primary.text))
+            )
         ):
             return alt
     if primary and primary.text:

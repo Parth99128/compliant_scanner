@@ -1,6 +1,9 @@
 """Offline tests for the optional Gemini adapter — no network, no key needed."""
 
-from app.services.llm import LlmNotConfigured, build_explain_prompt, explain_with_gemini
+from types import SimpleNamespace
+
+import app.services.llm as llm_mod
+from app.services.llm import LlmNotConfigured, build_explain_prompt
 
 
 def test_prompt_contains_verdict_and_rules():
@@ -19,10 +22,15 @@ def test_prompt_contains_verdict_and_rules():
     assert "82.5" in prompt
 
 
-def test_gemini_off_by_default_without_network():
-    # Default config has no key -> must fail closed without any HTTP call.
+def test_gemini_off_by_default_without_network(monkeypatch):
+    # Hermetic: force "off" regardless of any ambient .env on the dev machine.
+    monkeypatch.setattr(
+        llm_mod,
+        "get_settings",
+        lambda: SimpleNamespace(llm_provider="off", gemini_api_key="", llm_model="x"),
+    )
     try:
-        explain_with_gemini("hello", timeout_s=1.0)
+        llm_mod.explain_with_gemini("hello", timeout_s=1.0)
     except LlmNotConfigured:
         return
     raise AssertionError("expected LlmNotConfigured when no API key is set")

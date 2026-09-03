@@ -68,9 +68,7 @@ def run_florence_ocr(image_bytes: bytes) -> OcrResult | None:
         with torch.no_grad():
             generated = model.generate(**inputs, max_new_tokens=1024, num_beams=1)
         text = processor.batch_decode(generated, skip_special_tokens=False)[0]
-        parsed = processor.post_process_generation(
-            text, task="<OCR>", image_size=(img.width, img.height)
-        )
+        parsed = processor.post_process_generation(text, task="<OCR>", image_size=(img.width, img.height))
         raw = parsed.get("<OCR>", "")
         cleaned = " ".join(raw.replace("\r", "\n").split())
         if not cleaned:
