@@ -1,11 +1,23 @@
-"""Offline multi-engine OCR tests — Florence-2 disabled, so no weights/network."""
+"""Offline multi-engine OCR tests — hermetic regardless of local .env flags."""
 
+from types import SimpleNamespace
+
+import app.services.florence as fl_mod
 from app.services import ocr
-from app.services.florence import is_enabled, run_florence_ocr
+from app.services.florence import run_florence_ocr
 
 
-def test_florence_disabled_by_default():
-    assert is_enabled() is False
+def _off(monkeypatch):
+    monkeypatch.setattr(
+        fl_mod,
+        "get_settings",
+        lambda: SimpleNamespace(florence_enabled="false", florence_model="x"),
+    )
+
+
+def test_florence_disabled_by_default(monkeypatch):
+    _off(monkeypatch)
+    assert fl_mod.is_enabled() is False
     assert run_florence_ocr(b"not-an-image") is None
 
 

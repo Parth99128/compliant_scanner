@@ -27,8 +27,8 @@ from pathlib import Path
 ENTITY_PATTERNS = [
     ("MRP", re.compile(r"MRP\s*Rs\.?\s*[\d,]+(?:\.\d{1,2})?", re.IGNORECASE)),
     ("NET_QTY", re.compile(r"Net Qty:\s*[\d.,]+\s*(?:kg|g|mg|ml|l|pcs|cm)\b", re.IGNORECASE)),
-    ("MFG_DATE", re.compile(r"Mfg:\s*\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}", re.IGNORECASE)),
-    ("EXP_DATE", re.compile(r"Exp:\s*\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}", re.IGNORECASE)),
+    ("MFG_DATE", re.compile(r"Mfg:\s*(?:\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|[A-Za-z]+\s+\d{4})", re.IGNORECASE)),
+    ("EXP_DATE", re.compile(r"Exp:\s*(?:\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|[A-Za-z]+\s+\d{4})", re.IGNORECASE)),
     ("MANUFACTURER", re.compile(r"^(?:.+?Foods|Shakti Home|Ganga Mills|Lotus Daily|Kisan Gold).*$", re.MULTILINE)),
     ("CARE", re.compile(r"Customer Care:\s*\S+.*?1800[\s\-]*\d[\d\s\-]*", re.IGNORECASE)),
 ]

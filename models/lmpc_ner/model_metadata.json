@@ -1,6 +1,6 @@
 {
   "base_model": "spacy.blank('en')",
-  "training_date": "2026-09-03",
+  "training_date": "2026-09-04",
   "n_synthetic": 20000,
   "n_real": 0,
   "n_train": 18028,
@@ -10,7 +10,7 @@
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
-      "support": 11209
+      "support": 11247
     },
     "real": {
       "note": "no eval data for source"

@@ -34,6 +34,49 @@ def _dnn_upscale(gray: object, scale: int = 2) -> object | None:
     return None
 
 
+def mask_quads(raw: bytes, detections: list[dict], pad: int = 10) -> bytes:
+    """Paint white over barcode quads so OCR/VLM stops hallucinating on bars.
+
+    `detections` come from barcode.decode_positioned (quads in capped-1200px
+    space + that space's size); they are rescaled to the full image. Returns
+    the input bytes unchanged when there is nothing to mask or on any error.
+    """
+    if not detections:
+        return raw
+    try:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        return raw
+    try:
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return raw
+        ih, iw = img.shape[:2]
+        for det in detections:
+            quad = det.get("quad")
+            size = det.get("size")
+            if not quad or not size or len(quad) != 4:
+                continue
+            sw, sh = size
+            if not sw or not sh:
+                continue
+            pts = np.array([[(x / sw) * iw, (y / sh) * ih] for x, y in quad], dtype=np.int32)
+            x, y, w, h = cv2.boundingRect(pts)
+            cv2.rectangle(
+                img,
+                (max(0, x - pad), max(0, y - pad)),
+                (min(iw, x + w + pad), min(ih, y + h + pad)),
+                (255, 255, 255),
+                thickness=-1,
+            )
+        ok, buf = cv2.imencode(".png", img)
+        return bytes(buf) if ok else raw
+    except Exception:
+        return raw
+
+
 def preprocess_for_ocr(image_bytes: bytes) -> bytes:
     try:
         import cv2  # type: ignore
@@ -47,7 +90,16 @@ def preprocess_for_ocr(image_bytes: bytes) -> bytes:
             return image_bytes
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.bilateralFilter(gray, 5, 50, 50)
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Polarity-aware binarization: Tesseract needs dark text on a light
+        # background. Light-on-dark labels (white print on a red can, black
+        # pack with gold text, …) have a dark mean, so OTSU must be inverted.
+        thresh_type = cv2.THRESH_BINARY
+        try:
+            if float(np.mean(gray)) < 127.0:
+                thresh_type = cv2.THRESH_BINARY_INV
+        except Exception:
+            thresh_type = cv2.THRESH_BINARY
+        _, binary = cv2.threshold(gray, 0, 255, thresh_type + cv2.THRESH_OTSU)
         h, w = binary.shape
         if max(h, w) < 1200:  # micro-text path: SR model if present, else 2x cubic
             up = _dnn_upscale(binary, 2)

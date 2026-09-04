@@ -20,6 +20,8 @@ Tesseract read.
 
 from __future__ import annotations
 
+import re
+
 from app.core.config import get_settings
 from app.services.ocr import OcrResult
 
@@ -51,6 +53,18 @@ def _load():
     return _model, _processor
 
 
+def repair_spacing(raw: str) -> str:
+    """Restore inter-word spaces generative OCR drops ("great!NUTRITIONAL").
+
+    Conservative joints only (lowercase->UPPERCASE, punctuation->letter):
+    codes, dates and quantities ("E150d", "140g", "01/09/2025") have no
+    such joints and pass through untouched. Pure function, unit-tested.
+    """
+    fixed = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", raw.replace("\r", "\n"))
+    fixed = re.sub(r"([.!?;:])(?=[A-Za-z])", r"\1 ", fixed)
+    return " ".join(fixed.split())
+
+
 def run_florence_ocr(image_bytes: bytes) -> OcrResult | None:
     """Florence-2 '<OCR>' read. None when disabled, deps missing, or on any error."""
     if not is_enabled():
@@ -62,6 +76,9 @@ def run_florence_ocr(image_bytes: bytes) -> OcrResult | None:
 
         model, processor = _load()
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # Cap resolution: full phone shots infer 3-5x slower with no text gain.
+        if img.width > 1280:
+            img = img.resize((1280, int(1280 * img.size[1] / img.size[0])))
         inputs = processor(text="<OCR>", images=img, return_tensors="pt")
         import torch
 
@@ -70,7 +87,7 @@ def run_florence_ocr(image_bytes: bytes) -> OcrResult | None:
         text = processor.batch_decode(generated, skip_special_tokens=False)[0]
         parsed = processor.post_process_generation(text, task="<OCR>", image_size=(img.width, img.height))
         raw = parsed.get("<OCR>", "")
-        cleaned = " ".join(raw.replace("\r", "\n").split())
+        cleaned = repair_spacing(raw)
         if not cleaned:
             return None
         # No word confidences from generative OCR -> 0.0 (see module docstring).

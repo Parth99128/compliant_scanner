@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     allowed_content_types: str = "image/jpeg,image/png,image/webp"
     rate_limit_scans: str = "20/minute"
 
+    cors_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000," "http://localhost:5174,http://127.0.0.1:5174"
+    )
+
     cloud_vision_enabled: str = "false"
 
     # Optional Gemini/Gemma LLM adapter (off by default; core pipeline never needs it).

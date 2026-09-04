@@ -38,7 +38,7 @@ def extract_label(image_bytes: bytes, ppm: float | None = None) -> dict:
     if ppm is None:
         ppm = detect_ppm_from_reference_card(image_bytes)
     ocr = run_ocr(clean)
-    boxes = word_boxes(clean)
+    boxes = word_boxes(clean, ocr.config)
     decl = extract_fields(ocr.text)
     med_px = _median([float(b.h) for b in boxes]) if boxes else None
     font_mm = font_height_mm(med_px, ppm) if med_px and ppm else None

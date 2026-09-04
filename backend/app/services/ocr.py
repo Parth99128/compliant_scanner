@@ -23,6 +23,15 @@ class OcrResult:
     engine: str
     confidence: float = 0.0
     boxes: list[WordBox] = field(default_factory=list)
+    config: str = "--oem 3 --psm 3"  # winning Tesseract config (box geometry source)
+
+
+# Tesseract configs, best first per measured evidence (see ml tuning notes):
+# PSM 3 = fully automatic page segmentation (flat scans); PSM 11 = sparse
+# text (label photos with graphics). Dual-pass keeps the higher-confidence
+# read; PSM 11 doubles photo readability (6/20 -> 12/20 @>=60%) with zero
+# regression on clean labels, at ~2x OCR cost (still inside the 5 s budget).
+TESS_CONFIGS = ("--oem 3 --psm 3", "--oem 3 --psm 11")
 
 
 def _tesseract(image_bytes: bytes) -> OcrResult | None:
@@ -42,15 +51,20 @@ def _tesseract(image_bytes: bytes) -> OcrResult | None:
                 pytesseract.pytesseract.tesseract_cmd = candidate
                 break
         img = Image.open(io.BytesIO(image_bytes))
-        text = pytesseract.image_to_string(img)
-        if text and text.strip():
-            return OcrResult(text=text.strip(), engine="tesseract", confidence=_mean_confidence(image_bytes))
-        return None
+        best: OcrResult | None = None
+        for config in TESS_CONFIGS:
+            text = pytesseract.image_to_string(img, config=config)
+            if text and text.strip():
+                conf = _mean_confidence(image_bytes, config)
+                cand = OcrResult(text=text.strip(), engine="tesseract", confidence=conf, config=config)
+                if best is None or cand.confidence > best.confidence:
+                    best = cand
+        return best
     except Exception:
         return None
 
 
-def _mean_confidence(image_bytes: bytes) -> float:
+def _mean_confidence(image_bytes: bytes, config: str = "--oem 3 --psm 3") -> float:
     """Mean word confidence (0-100); 0.0 when unavailable. Never raises."""
     try:
         import io
@@ -59,7 +73,7 @@ def _mean_confidence(image_bytes: bytes) -> float:
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes))
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
         confs = [
             float(c)
             for c, t in zip(data.get("conf", []), data.get("text", []))
@@ -70,7 +84,7 @@ def _mean_confidence(image_bytes: bytes) -> float:
         return 0.0
 
 
-def word_boxes(image_bytes: bytes) -> list[WordBox]:
+def word_boxes(image_bytes: bytes, config: str = "--oem 3 --psm 3") -> list[WordBox]:
     """Word-level bounding boxes for frontend overlays. Empty list on any failure."""
     try:
         import io
@@ -79,7 +93,7 @@ def word_boxes(image_bytes: bytes) -> list[WordBox]:
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes))
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
         boxes: list[WordBox] = []
         n = len(data.get("text", []))
         for i in range(n):

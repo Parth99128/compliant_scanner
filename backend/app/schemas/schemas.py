@@ -73,6 +73,9 @@ class ScanOut(BaseModel):
     boxes: list[WordBoxOut] = []
     reviewed_by: str | None = None
     reviewed_at: str | None = None
+    has_image: bool = False
+    coord_w: int | None = None  # OCR box coordinate space (preprocessed px)
+    coord_h: int | None = None
 
 
 class ScanSummaryOut(BaseModel):
@@ -82,6 +85,7 @@ class ScanSummaryOut(BaseModel):
     status: str = "pending_review"
     ocr_engine: str
     created_at: str
+    preview: str = ""  # first line of OCR text (label excerpt for lists)
 
 
 class ReviewIn(BaseModel):

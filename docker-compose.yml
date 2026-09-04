@@ -16,10 +16,13 @@ services:
       JWT_SECRET: change-me-to-a-long-random-value
     depends_on:
       - db
-  frontend:
-    build: ./frontend
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
-      - "5173:80"
+      - "3000:3000"
     depends_on:
       - backend
 volumes:

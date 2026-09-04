@@ -13,7 +13,7 @@ pytest
 ## Docker Compose (backend + postgres + frontend)
 ```
 docker compose up --build
-# backend http://localhost:8000/docs, frontend http://localhost:5173
+# backend http://localhost:8000/docs, dashboard http://localhost:3000
 ```
 
 Env vars: `DATABASE_URL`, `JWT_SECRET`, `MAX_UPLOAD_MB`, `CLOUD_VISION_ENABLED`.

@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger, request_id_ctx
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, decode_token, hash_password, verify_password
-from app.db.session import Base, engine, get_db
+from app.db.session import Base, engine, ensure_columns, get_db
 from app.models.tables import ScanRecord, User
 from app.schemas.schemas import (
     CheckOut,
@@ -25,14 +25,22 @@ from app.schemas.schemas import (
     TokenOut,
     WordBoxOut,
 )
+from app.services.barcode import decode_gtins, decode_positioned, prefix_country
 from app.services.extraction import extract_fields
 from app.services.llm import LlmError, LlmNotConfigured, build_explain_prompt, explain_with_gemini
 from app.services.ocr import run_ocr, word_boxes
 from app.services.report import build_report_pdf
-from app.services.rule_engine import ProductDeclaration, evaluate_compliance
+from app.services.rule_engine import (
+    CheckResult,
+    ComplianceReport,
+    ProductDeclaration,
+    Status,
+    evaluate_compliance,
+)
 from app.services.vision import (
     detect_ppm_from_reference_card,
     font_height_mm,
+    mask_quads,
     preprocess_for_ocr,
 )
 
@@ -41,10 +49,71 @@ log = get_logger("api")
 bearer = HTTPBearer(auto_error=False)
 
 Base.metadata.create_all(bind=engine)
+ensure_columns()
 
 
 def _rid() -> str:
     return request_id_ctx.get()
+
+
+def _store_image(raw: bytes) -> tuple[bytes | None, str]:
+    """Downscaled JPEG capture for the scan viewer (max 1200px). None on any failure."""
+    try:
+        import io
+
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        if img.width > 1200:
+            img = img.resize((1200, int(1200 * img.size[1] / img.size[0])))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=72)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return None, "image/jpeg"
+
+
+def _boxes_payload(out: "_PipelineOut") -> tuple[str, int | None, int | None]:
+    """Serialized boxes + their coordinate space for storage and the viewer."""
+    try:
+        payload = json.dumps(
+            {
+                "w": out.coord_w,
+                "h": out.coord_h,
+                "boxes": [dataclasses.asdict(b) for b in out.boxes[:500]],
+            }
+        )
+    except Exception:
+        payload = '{"w": null, "h": null, "boxes": []}'
+    return payload, out.coord_w, out.coord_h
+
+
+def _stored_boxes(rec: ScanRecord) -> tuple[list[dict], int | None, int | None]:
+    try:
+        data = json.loads(rec.boxes_json or "{}")
+        boxes = data.get("boxes", []) if isinstance(data, dict) else []
+        w = rec.ocr_width
+        h = rec.ocr_height
+        if w is None and isinstance(data, dict):
+            w = data.get("w")
+        if h is None and isinstance(data, dict):
+            h = data.get("h")
+        return boxes if isinstance(boxes, list) else [], w, h
+    except Exception:
+        return [], rec.ocr_width, rec.ocr_height
+
+
+def _clean_dims(clean: bytes) -> tuple[int | None, int | None]:
+    """Pixel dims of the preprocessed image = OCR box coordinate space."""
+    try:
+        import io
+
+        from PIL import Image
+
+        with Image.open(io.BytesIO(clean)) as img:
+            return img.width, img.height
+    except Exception:
+        return None, None
 
 
 def _checks(report) -> list[CheckOut]:
@@ -151,35 +220,52 @@ def validate_declaration(body: DeclarationIn):
     )
 
 
-@router.post("/scans", response_model=ScanOut, tags=["scans"])
-@limiter.limit("20/minute")
-async def scan_image(
-    request: Request,
-    file: UploadFile = File(...),
-    ppm: float | None = Form(default=None),
-    font_px: float | None = Form(default=None),
-    letter_px: float | None = Form(default=None),
-    panel_area_cm2: float | None = Form(default=None),
-    is_embossed: bool = Form(default=False),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_user),
-):
-    settings = get_settings()
-    if file.content_type not in settings.allowed_content_type_list:
-        raise HTTPException(status_code=415, detail=f"Unsupported type {file.content_type}")
-    raw = await file.read()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(raw) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(raw) > max_bytes:
-        raise HTTPException(status_code=413, detail="File too large")
-    try:
-        clean = preprocess_for_ocr(raw)
-        ocr = run_ocr(clean)
-        boxes = word_boxes(clean)
-    except Exception as exc:
-        log.error("ocr_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="OCR processing failed")
+@dataclasses.dataclass
+class _PipelineOut:
+    ocr_text: str
+    ocr_engine: str
+    ocr_confidence: float
+    boxes: list
+    font_mm: float | None
+    decl: ProductDeclaration
+    report: ComplianceReport
+    coord_w: int | None = None  # preprocessed-image dims = box coordinate space
+    coord_h: int | None = None
+
+
+def _run_pipeline(
+    raw: bytes,
+    ppm: float | None,
+    font_px: float | None,
+    letter_px: float | None,
+    panel_area_cm2: float | None,
+    is_embossed: bool,
+) -> _PipelineOut:
+    """OCR -> extract -> calibrate -> rule-evaluate for one image. Never returns None."""
+    clean = preprocess_for_ocr(raw)
+    ocr = run_ocr(clean)
+    boxes = word_boxes(clean, ocr.config)
+    # Robustness second pass: when the first read is weak and a barcode is
+    # present, mask the bars (VLM/OCR hallucinate digit soup on them) and
+    # re-read; keep whichever read is stronger. Clean scans pay nothing.
+    if ocr.confidence < 60:
+        try:
+            dets = decode_positioned(raw)
+        except Exception:
+            dets = []
+        if dets:
+            try:
+                masked = mask_quads(raw, dets)
+            except Exception:
+                masked = raw
+            if masked != raw:
+                try:
+                    clean2 = preprocess_for_ocr(masked)
+                    ocr2 = run_ocr(clean2)
+                except Exception:
+                    ocr2 = None
+                if ocr2 and ocr2.text.strip() and ocr2.confidence > ocr.confidence:
+                    ocr, boxes, clean = ocr2, word_boxes(clean2, ocr2.config), clean2
     decl = extract_fields(ocr.text)
     # Spatial calibration: explicit ppm wins, else auto-detect reference card.
     resolved_ppm = ppm if (ppm and ppm > 0) else detect_ppm_from_reference_card(raw)
@@ -209,34 +295,231 @@ async def scan_image(
             panel_area_cm2=panel_area_cm2,
         )
     report = evaluate_compliance(decl, ocr_confidence=ocr.confidence or None)
+    # Barcode identity cross-check (INFO only): GTIN + GS1 prefix country.
+    # Never changes the verdict — barcodes don't encode declarations.
+    try:
+        gtins = decode_gtins(raw)
+    except Exception:
+        gtins = []
+    if gtins:
+        cards = list(report.results)
+        for g in gtins:
+            country = prefix_country(g["text"])
+            cards.append(
+                CheckResult(
+                    rule_id="LMPC-gtin",
+                    status=Status.PASS,
+                    message=f"Barcode {g['format']} {g['text']} (GS1 prefix: {country})",
+                    field="gtin",
+                    citation="GS1 prefix (voluntary identity cross-check)",
+                    citation_verified=False,
+                    observed=g["text"],
+                    expected="consistent with declared origin",
+                    severity="info",
+                )
+            )
+        report = dataclasses.replace(report, results=cards)
+    coord_w, coord_h = _clean_dims(clean)
+    return _PipelineOut(
+        ocr_text=ocr.text,
+        ocr_engine=ocr.engine,
+        ocr_confidence=ocr.confidence,
+        boxes=boxes,
+        font_mm=font_mm,
+        decl=decl,
+        report=report,
+        coord_w=coord_w,
+        coord_h=coord_h,
+    )
+
+
+@router.post("/scans", response_model=ScanOut, tags=["scans"])
+@limiter.limit("20/minute")
+async def scan_image(
+    request: Request,
+    file: UploadFile = File(...),
+    ppm: float | None = Form(default=None),
+    font_px: float | None = Form(default=None),
+    letter_px: float | None = Form(default=None),
+    panel_area_cm2: float | None = Form(default=None),
+    is_embossed: bool = Form(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    settings = get_settings()
+    if file.content_type not in settings.allowed_content_type_list:
+        raise HTTPException(status_code=415, detail=f"Unsupported type {file.content_type}")
+    raw = await file.read()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail="File too large")
+    try:
+        out = _run_pipeline(raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed)
+    except Exception as exc:
+        log.error("ocr_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="OCR processing failed")
+    report = out.report
+    img_blob, img_type = _store_image(raw)
+    boxes_json, coord_w, coord_h = _boxes_payload(out)
     rec = ScanRecord(
         owner_id=user.id,
         request_id=_rid(),
-        ocr_text=ocr.text[:8000],
-        ocr_engine=ocr.engine,
-        ocr_confidence=ocr.confidence,
-        font_height_mm=font_mm,
+        ocr_text=out.ocr_text[:8000],
+        ocr_engine=out.ocr_engine,
+        ocr_confidence=out.ocr_confidence,
+        font_height_mm=out.font_mm,
         compliant=report.compliant,
         verdict=report.verdict,
         results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
+        image_blob=img_blob,
+        image_content_type=img_type,
+        boxes_json=boxes_json,
+        ocr_width=coord_w,
+        ocr_height=coord_h,
     )
     db.add(rec)
     db.commit()
     db.refresh(rec)
-    log.info("scan_done", scan_id=rec.id, compliant=report.compliant, engine=ocr.engine)
+    log.info("scan_done", scan_id=rec.id, compliant=report.compliant, engine=out.ocr_engine)
     return ScanOut(
         id=rec.id,
         request_id=rec.request_id,
         status=rec.status,
-        ocr_engine=ocr.engine,
-        ocr_text=ocr.text[:2000],
-        ocr_confidence=ocr.confidence,
-        font_height_mm=font_mm,
+        ocr_engine=out.ocr_engine,
+        ocr_text=out.ocr_text[:2000],
+        ocr_confidence=out.ocr_confidence,
+        font_height_mm=out.font_mm,
         verdict=report.verdict,
         compliant=report.compliant,
         results=_checks(report),
         warnings=report.warnings,
-        boxes=[WordBoxOut(**dataclasses.asdict(b)) for b in boxes[:500]],
+        boxes=[WordBoxOut(**dataclasses.asdict(b)) for b in out.boxes[:500]],
+        has_image=rec.image_blob is not None,
+        coord_w=coord_w,
+        coord_h=coord_h,
+    )
+
+
+def _merge_ocr_lines(per_image: list[tuple[float, str]]) -> str:
+    """Union of OCR lines across captures, best-confidence image first, de-duplicated.
+
+    Multi-angle shots of one label overlap heavily; the union recovers words
+    any single angle lost to glare/curve/blur, without double counting.
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+    for _conf, text in sorted(per_image, key=lambda t: -t[0]):
+        for line in (text or "").splitlines():
+            norm = " ".join(line.split())
+            if len(norm) >= 2 and norm.lower() not in seen:
+                seen.add(norm.lower())
+                merged.append(norm)
+    return "\n".join(merged)
+
+
+@router.post("/scans/merge", response_model=ScanOut, tags=["scans"])
+@limiter.limit("10/minute")
+async def merge_scans(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    ppm: float | None = Form(default=None),
+    font_px: float | None = Form(default=None),
+    letter_px: float | None = Form(default=None),
+    panel_area_cm2: float | None = Form(default=None),
+    is_embossed: bool = Form(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Multi-angle capture: 2-5 shots of one label merged into a single verdict.
+
+    Each image runs the full pipeline; OCR lines are unioned by confidence and
+    the merged text is extracted + evaluated once. Measurements (font height,
+    boxes) come from the highest-confidence capture. Stored as ONE scan record
+    so history and audit stay clean.
+    """
+    settings = get_settings()
+    if not 2 <= len(files) <= 5:
+        raise HTTPException(status_code=422, detail="Send 2-5 images of the same label")
+    raws: list[bytes] = []
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    for f in files:
+        if f.content_type not in settings.allowed_content_type_list:
+            raise HTTPException(status_code=415, detail=f"Unsupported type {f.content_type}")
+        raw = await f.read()
+        if len(raw) == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+        if len(raw) > max_bytes:
+            raise HTTPException(status_code=413, detail="File too large")
+        raws.append(raw)
+    try:
+        outs = [_run_pipeline(raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed) for raw in raws]
+    except Exception as exc:
+        log.error("ocr_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="OCR processing failed")
+    best_i = max(range(len(outs)), key=lambda i: (outs[i].ocr_confidence, len(outs[i].ocr_text)))
+    best = outs[best_i]
+    merged_text = _merge_ocr_lines([(o.ocr_confidence, o.ocr_text) for o in outs])
+    merged_decl = extract_fields(merged_text)
+    # Text fields come from the union; measurements stay with the best frame.
+    decl = dataclasses.replace(
+        merged_decl,
+        min_numeral_height_mm=best.decl.min_numeral_height_mm,
+        min_letter_height_mm=best.decl.min_letter_height_mm,
+        min_width_to_height_ratio=best.decl.min_width_to_height_ratio,
+        is_embossed=is_embossed,
+        panel_area_cm2=panel_area_cm2,
+    )
+    report = evaluate_compliance(decl, ocr_confidence=best.ocr_confidence or None)
+    # Carry over barcode identity cards from the best frame (INFO only).
+    carried = [r for r in best.report.results if r.rule_id == "LMPC-gtin"]
+    if carried:
+        report = dataclasses.replace(report, results=[*report.results, *carried])
+    warnings = list(report.warnings)
+    warnings.append(
+        f"Merged {len(raws)} captures (best single-frame confidence "
+        f"{best.ocr_confidence}%); text combined by confidence, evaluated once."
+    )
+    engine = f"{best.ocr_engine}+merge{len(raws)}"
+    img_blob, img_type = _store_image(raws[best_i])
+    boxes_json, coord_w, coord_h = _boxes_payload(best)
+    rec = ScanRecord(
+        owner_id=user.id,
+        request_id=_rid(),
+        ocr_text=merged_text[:8000],
+        ocr_engine=engine,
+        ocr_confidence=best.ocr_confidence,
+        font_height_mm=best.font_mm,
+        compliant=report.compliant,
+        verdict=report.verdict,
+        results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
+        image_blob=img_blob,
+        image_content_type=img_type,
+        boxes_json=boxes_json,
+        ocr_width=coord_w,
+        ocr_height=coord_h,
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    log.info("scan_merged", scan_id=rec.id, compliant=report.compliant, frames=len(raws))
+    return ScanOut(
+        id=rec.id,
+        request_id=rec.request_id,
+        status=rec.status,
+        ocr_engine=engine,
+        ocr_text=merged_text[:2000],
+        ocr_confidence=best.ocr_confidence,
+        font_height_mm=best.font_mm,
+        verdict=report.verdict,
+        compliant=report.compliant,
+        results=_checks(report),
+        warnings=warnings,
+        boxes=[WordBoxOut(**dataclasses.asdict(b)) for b in best.boxes[:500]],
+        has_image=rec.image_blob is not None,
+        coord_w=coord_w,
+        coord_h=coord_h,
     )
 
 
@@ -263,6 +546,7 @@ def list_scans(db: Session = Depends(get_db), user: User = Depends(current_user)
             status=r.status,
             ocr_engine=r.ocr_engine,
             created_at=r.created_at.isoformat(),
+            preview=(r.ocr_text or "").strip().splitlines()[0][:80] if (r.ocr_text or "").strip() else "",
         )
         for r in q.all()
     ]
@@ -270,6 +554,7 @@ def list_scans(db: Session = Depends(get_db), user: User = Depends(current_user)
 
 def _scan_out(rec: ScanRecord) -> ScanOut:
     stored = json.loads(rec.results_json or "[]")
+    boxes, coord_w, coord_h = _stored_boxes(rec)
     return ScanOut(
         id=rec.id,
         request_id=rec.request_id,
@@ -284,6 +569,33 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         warnings=[],
         reviewed_by=rec.reviewed_by or None,
         reviewed_at=rec.reviewed_at.isoformat() if rec.reviewed_at else None,
+        has_image=rec.image_blob is not None,
+        coord_w=coord_w,
+        coord_h=coord_h,
+        boxes=[
+            WordBoxOut(
+                text=str(b.get("text", "")),
+                x=int(b.get("x", 0)),
+                y=int(b.get("y", 0)),
+                w=int(b.get("w", 0)),
+                h=int(b.get("h", 0)),
+                confidence=float(b.get("confidence", 0.0)),
+            )
+            for b in boxes[:500]
+            if isinstance(b, dict)
+        ],
+    )
+
+
+@router.get("/scans/{scan_id}/image", tags=["scans"])
+def scan_image_file(scan_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Original capture for the scan viewer (downscaled JPEG). 404 when absent."""
+    rec = _get_scan(scan_id, user, db)
+    if not rec.image_blob:
+        raise HTTPException(status_code=404, detail="No stored image for this scan")
+    return Response(
+        content=bytes(rec.image_blob),
+        media_type=rec.image_content_type or "image/jpeg",
     )
 
 

@@ -1,0 +1,208 @@
+import { z } from "zod";
+
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+
+const TokenSchema = z.object({ access_token: z.string(), token_type: z.string().default("bearer") });
+export type Token = z.infer<typeof TokenSchema>;
+
+const ScanSummarySchema = z.object({
+  id: z.string(),
+  verdict: z.string(),
+  compliant: z.boolean(),
+  status: z.string(),
+  ocr_engine: z.string(),
+  created_at: z.string(),
+  preview: z.string().default(""),
+});
+export type ScanSummary = z.infer<typeof ScanSummarySchema>;
+const ScanListSchema = z.array(ScanSummarySchema);
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}, token?: string): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(0, "Cannot reach the API server. Is the backend running?");
+  }
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      // Token expired/invalid: drop it and tell the app to send the user
+      // back to sign-in (AuthProvider listens for this event).
+      clearSession();
+      window.dispatchEvent(new Event("lmpc:unauthorized"));
+    }
+    throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  }
+  return schema.parse(await res.json());
+}
+
+export const CredentialsSchema = z.object({
+  username: z.string().trim().min(3, "Username needs at least 3 characters."),
+  password: z.string().min(6, "Password needs at least 6 characters."),
+  role: z.enum(["officer", "admin"]).default("officer"),
+});
+export type Credentials = z.infer<typeof CredentialsSchema>;
+
+export function login(body: Credentials): Promise<Token> {
+  return request("/auth/login", TokenSchema, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function register(body: Credentials): Promise<Token> {
+  return request("/auth/register", TokenSchema, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function listScans(token: string): Promise<ScanSummary[]> {
+  return request("/scans", ScanListSchema, { method: "GET" }, token);
+}
+
+const CheckSchema = z.object({
+  rule_id: z.string(),
+  status: z.string(),
+  passed: z.boolean(),
+  message: z.string(),
+  field: z.string().default(""),
+  citation: z.string().default(""),
+  citation_verified: z.boolean().default(false),
+  source_ref: z.string().default(""),
+  observed: z.string().nullable().default(null),
+  expected: z.string().nullable().default(null),
+  severity: z.string().default("info"),
+  remedy: z.string().nullable().default(null),
+});
+export type Check = z.infer<typeof CheckSchema>;
+
+const BoxSchema = z.object({
+  text: z.string(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  confidence: z.number(),
+});
+export type WordBox = z.infer<typeof BoxSchema>;
+
+const ScanDetailSchema = z.object({
+  id: z.string(),
+  request_id: z.string(),
+  status: z.string(),
+  ocr_engine: z.string(),
+  ocr_text: z.string(),
+  ocr_confidence: z.number(),
+  font_height_mm: z.number().nullable().default(null),
+  verdict: z.string(),
+  compliant: z.boolean(),
+  results: z.array(CheckSchema),
+  warnings: z.array(z.string()).default([]),
+  boxes: z.array(BoxSchema).default([]),
+  reviewed_by: z.string().nullable().default(null),
+  reviewed_at: z.string().nullable().default(null),
+  has_image: z.boolean().default(false),
+  coord_w: z.number().nullable().default(null),
+  coord_h: z.number().nullable().default(null),
+});
+export type ScanDetail = z.infer<typeof ScanDetailSchema>;
+
+const ExplainSchema = z.object({
+  explanation: z.string(),
+  provider: z.string().default(""),
+  model: z.string().default(""),
+  request_id: z.string(),
+});
+
+export function getScan(id: string, token: string): Promise<ScanDetail> {
+  return request(`/scans/${id}`, ScanDetailSchema, { method: "GET" }, token);
+}
+
+export async function fetchBlob(path: string, token: string): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  } catch {
+    throw new ApiError(0, "Cannot reach the API server. Is the backend running?");
+  }
+  if (res.status === 409) throw new ApiError(409, "Report is not final — confirm the review first, then download.");
+  if (res.status === 401 && typeof window !== "undefined") {
+    clearSession();
+    window.dispatchEvent(new Event("lmpc:unauthorized"));
+  }
+  if (!res.ok) throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  return res.blob();
+}
+
+export function reviewScan(id: string, token: string, decision: "confirm" | "override", notes: string): Promise<ScanDetail> {
+  return request(
+    `/scans/${id}/review`,
+    ScanDetailSchema,
+    { method: "POST", body: JSON.stringify({ decision, notes }) },
+    token
+  );
+}
+
+export async function explainScan(id: string, token: string): Promise<string> {
+  const r = await request(`/scans/${id}/explain`, ExplainSchema, { method: "POST", body: JSON.stringify({}) }, token);
+  return r.explanation;
+}
+
+export interface ScanOptions {
+  ppm?: string;
+  fontPx?: string;
+  panelArea?: string;
+  embossed?: boolean;
+}
+
+export async function uploadScan(files: File[], opts: ScanOptions, token: string): Promise<ScanDetail> {
+  const fd = new FormData();
+  if (files.length > 1) {
+    files.slice(0, 5).forEach((f) => fd.append("files", f));
+  } else {
+    fd.append("file", files[0]);
+  }
+  if (opts.ppm) fd.append("ppm", opts.ppm);
+  if (opts.fontPx) fd.append("font_px", opts.fontPx);
+  if (opts.panelArea) fd.append("panel_area_cm2", opts.panelArea);
+  fd.append("is_embossed", opts.embossed ? "true" : "false");
+  const path = files.length > 1 ? "/scans/merge" : "/scans";
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+  } catch {
+    throw new ApiError(0, "Upload failed — is the backend reachable?");
+  }
+  if (!res.ok) throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  return ScanDetailSchema.parse(await res.json());
+}
+
+const TOKEN_KEY = "lmpc_token";
+const USER_KEY = "lmpc_user";
+
+export function loadSession(): { token: string; username: string } | null {
+  if (typeof window === "undefined") return null;
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  const username = window.localStorage.getItem(USER_KEY);
+  return token && username ? { token, username } : null;
+}
+
+export function saveSession(token: string, username: string): void {
+  window.localStorage.setItem(TOKEN_KEY, token);
+  window.localStorage.setItem(USER_KEY, username);
+}
+
+export function clearSession(): void {
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(USER_KEY);
+}

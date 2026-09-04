@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, String, Text
+from sqlalchemy import Boolean, DateTime, Float, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -25,6 +25,14 @@ class ScanRecord(Base):
     overrides_json: Mapped[str] = mapped_column(Text, default="[]")
     results_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Downscaled original capture for the scan viewer (nullable: pre-feature rows).
+    image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, default=None)
+    image_content_type: Mapped[str] = mapped_column(String(32), default="image/jpeg")
+    # OCR word boxes in preprocessed-image pixel space + that space's dims,
+    # so the viewer overlay aligns at any display size (SVG viewBox).
+    boxes_json: Mapped[str] = mapped_column(Text, default="[]")
+    ocr_width: Mapped[int] = mapped_column(nullable=True, default=None)
+    ocr_height: Mapped[int] = mapped_column(nullable=True, default=None)
 
 
 class User(Base):

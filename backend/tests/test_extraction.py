@@ -23,6 +23,20 @@ def test_extract_empty_and_corrupted():
     assert d2.generic_name is None or isinstance(d2.generic_name, str)
 
 
+def test_tax_phrase_tolerates_punctuation():
+    d = extract_fields("MRP Rs. 99 (incl. of all taxes)")
+    assert d.mrp == 99.0 and d.mrp_includes_taxes
+    d2 = extract_fields("MRP Rs. 99 INCLUSIVE OF ALL TAXES")
+    assert d2.mrp_includes_taxes
+
+
+def test_generic_skips_numeric_garbage_first_line():
+    d = extract_fields("1\n2\n3\nInstant Noodles with seasoning\nNet Qty: 60 g")
+    assert d.generic_name == "Instant Noodles with seasoning"
+    d2 = extract_fields("7\n!!\n")
+    assert d2.generic_name is None
+
+
 def test_ppm_math():
     assert estimate_ppm(200, 20) == 10.0
     assert font_height_mm(30, 10.0) == 3.0

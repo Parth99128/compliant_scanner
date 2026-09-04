@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import json
 import random
 from pathlib import Path
@@ -29,8 +30,19 @@ def make_label(i: int, violation: str | None = None) -> tuple[list[str], dict]:
     qty = random.choice([50, 100, 200, 500, 1000])
     unit = random.choice(UNITS)
     mrp = round(random.uniform(40, 500), 2)
-    mfg = f"{random.randint(1, 28):02d}/{random.randint(1, 12):02d}/2025"
-    exp = f"{random.randint(1, 28):02d}/{random.randint(1, 12):02d}/2026"
+    mfg_day, mfg_mon = random.randint(1, 28), random.randint(1, 12)
+    exp_day, exp_mon = random.randint(1, 28), random.randint(1, 12)
+    # Date style mix: numeric (common), ABBR YEAR / Month Year (printed packs).
+    style = random.random()
+    if style < 0.6:
+        mfg = f"{mfg_day:02d}/{mfg_mon:02d}/2025"
+        exp = f"{exp_day:02d}/{exp_mon:02d}/2026"
+    elif style < 0.8:
+        mfg = f"{calendar.month_abbr[mfg_mon].upper()} 2025"
+        exp = f"{calendar.month_abbr[exp_mon].upper()} 2026"
+    else:
+        mfg = f"{calendar.month_name[mfg_mon]} 2025"
+        exp = f"{calendar.month_name[exp_mon]} 2026"
     tax_phrase = "Inclusive of all taxes" if violation != "missing_tax_phrase" else ""
     lines = [product, f"{brand}, Plot {i + 1}, {city}"]
     truth: dict = {"generic_name": product, "violation": violation}
