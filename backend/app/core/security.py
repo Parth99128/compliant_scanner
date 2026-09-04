@@ -3,7 +3,7 @@ import hmac
 import os
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
+from jose import jwt  # type: ignore[import-untyped]  # python-jose ships no stubs
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
