@@ -14,5 +14,5 @@ jobs:
       - run: black --check backend/app backend/tests
       - run: python -m mypy backend/app
       - run: python ml/accept_phase1.py --count 5
-      - run: python -m pytest backend/tests -q
+      - run: python -m pytest tests -q
         working-directory: backend
