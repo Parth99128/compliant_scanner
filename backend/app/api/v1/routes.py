@@ -5,6 +5,7 @@ from datetime import UTC
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -343,6 +344,9 @@ async def scan_image(
     letter_px: float | None = Form(default=None),
     panel_area_cm2: float | None = Form(default=None),
     is_embossed: bool = Form(default=False),
+    product_name: str | None = Form(default=None),
+    brand_name: str | None = Form(default=None),
+    category: str | None = Form(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -363,6 +367,7 @@ async def scan_image(
     report = out.report
     img_blob, img_type = _store_image(raw)
     boxes_json, coord_w, coord_h = _boxes_payload(out)
+    pname, bname, cat = _product_fields(out.decl, product_name, brand_name, category)
     rec = ScanRecord(
         owner_id=user.id,
         request_id=_rid(),
@@ -378,6 +383,9 @@ async def scan_image(
         boxes_json=boxes_json,
         ocr_width=coord_w,
         ocr_height=coord_h,
+        product_name=pname,
+        brand_name=bname,
+        category=cat,
     )
     db.add(rec)
     db.commit()
@@ -399,6 +407,9 @@ async def scan_image(
         has_image=rec.image_blob is not None,
         coord_w=coord_w,
         coord_h=coord_h,
+        product_name=rec.product_name,
+        brand_name=rec.brand_name,
+        category=rec.category,
     )
 
 
@@ -429,6 +440,9 @@ async def merge_scans(
     letter_px: float | None = Form(default=None),
     panel_area_cm2: float | None = Form(default=None),
     is_embossed: bool = Form(default=False),
+    product_name: str | None = Form(default=None),
+    brand_name: str | None = Form(default=None),
+    category: str | None = Form(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -484,6 +498,7 @@ async def merge_scans(
     engine = f"{best.ocr_engine}+merge{len(raws)}"
     img_blob, img_type = _store_image(raws[best_i])
     boxes_json, coord_w, coord_h = _boxes_payload(best)
+    pname, bname, cat = _product_fields(decl, product_name, brand_name, category)
     rec = ScanRecord(
         owner_id=user.id,
         request_id=_rid(),
@@ -499,6 +514,9 @@ async def merge_scans(
         boxes_json=boxes_json,
         ocr_width=coord_w,
         ocr_height=coord_h,
+        product_name=pname,
+        brand_name=bname,
+        category=cat,
     )
     db.add(rec)
     db.commit()
@@ -520,6 +538,9 @@ async def merge_scans(
         has_image=rec.image_blob is not None,
         coord_w=coord_w,
         coord_h=coord_h,
+        product_name=rec.product_name,
+        brand_name=rec.brand_name,
+        category=rec.category,
     )
 
 
@@ -533,11 +554,30 @@ def _get_scan(scan_id: str, user: User, db: Session) -> ScanRecord:
 
 
 @router.get("/scans", response_model=list[ScanSummaryOut], tags=["scans"])
-def list_scans(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    q = db.query(ScanRecord)
+def list_scans(
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+    q: str | None = None,
+    verdict: str | None = None,
+    status: str | None = None,
+):
+    """Scan repository: server-side search (id/product/brand/OCR text) + verdict/status filters."""
+    query = db.query(ScanRecord)
     if user.role != "admin":
-        q = q.filter(ScanRecord.owner_id == user.id)
-    q = q.order_by(ScanRecord.created_at.desc()).limit(100)
+        query = query.filter(ScanRecord.owner_id == user.id)
+    if verdict in ("COMPLIANT", "NON_COMPLIANT", "INCOMPLETE"):
+        query = query.filter(ScanRecord.verdict == verdict)
+    if status in ("pending_review", "final"):
+        query = query.filter(ScanRecord.status == status)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            ScanRecord.id.like(like)
+            | ScanRecord.product_name.like(like)
+            | ScanRecord.brand_name.like(like)
+            | ScanRecord.ocr_text.like(like)
+        )
+    query = query.order_by(ScanRecord.created_at.desc()).limit(100)
     return [
         ScanSummaryOut(
             id=r.id,
@@ -547,9 +587,101 @@ def list_scans(db: Session = Depends(get_db), user: User = Depends(current_user)
             ocr_engine=r.ocr_engine,
             created_at=r.created_at.isoformat(),
             preview=(r.ocr_text or "").strip().splitlines()[0][:80] if (r.ocr_text or "").strip() else "",
+            product_name=r.product_name or "",
+            brand_name=r.brand_name or "",
+            category=r.category or "",
         )
-        for r in q.all()
+        for r in query.all()
     ]
+
+
+class ProductIn(BaseModel):
+    product_name: str = Field(default="", max_length=160)
+    brand_name: str = Field(default="", max_length=160)
+    category: str = Field(default="", max_length=80)
+
+
+def _product_fields(
+    decl: ProductDeclaration,
+    product_name: str | None,
+    brand_name: str | None,
+    category: str | None,
+) -> tuple[str, str, str]:
+    """Officer-supplied labels win; otherwise auto-fill from extraction."""
+    return (
+        (product_name or "").strip()[:160] or (decl.generic_name or "")[:160],
+        (brand_name or "").strip()[:160] or (decl.manufacturer_name or "")[:160],
+        (category or "").strip()[:80],
+    )
+
+
+@router.patch("/scans/{scan_id}/product", response_model=ScanOut, tags=["scans"])
+def update_product(
+    scan_id: str,
+    body: ProductIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Correct/label a scan's product identity after the fact (audit: review notes stay separate)."""
+    rec = _get_scan(scan_id, user, db)
+    rec.product_name = body.product_name.strip()[:160]
+    rec.brand_name = body.brand_name.strip()[:160]
+    rec.category = body.category.strip()[:80]
+    db.commit()
+    db.refresh(rec)
+    log.info("scan_product_updated", scan_id=rec.id, by=user.username)
+    return _scan_out(rec)
+
+
+@router.get("/stats/overview", tags=["meta"])
+def stats_overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Officer dashboard aggregates: counts, top failing rules, daily volume, recent scans."""
+    from collections import Counter
+    from datetime import datetime
+
+    query = db.query(ScanRecord)
+    if user.role != "admin":
+        query = query.filter(ScanRecord.owner_id == user.id)
+    rows = query.order_by(ScanRecord.created_at.desc()).limit(500).all()
+    by_verdict: Counter[str] = Counter()
+    failed_rules: Counter[str] = Counter()
+    by_day: Counter[str] = Counter()
+    for r in rows:
+        by_verdict[r.verdict] += 1
+        day = r.created_at.isoformat()[:10] if isinstance(r.created_at, datetime) else str(r.created_at)[:10]
+        by_day[day] += 1
+        try:
+            stored = json.loads(r.results_json or "[]")
+        except Exception:
+            stored = []
+        for res in stored:
+            if (
+                isinstance(res, dict)
+                and res.get("status") in ("FAIL", "NOT_FOUND")
+                and res.get("severity") != "info"
+            ):
+                failed_rules[res.get("rule_id", "unknown")] += 1
+    recent = [
+        {
+            "id": r.id,
+            "verdict": r.verdict,
+            "status": r.status,
+            "product_name": r.product_name or "",
+            "preview": (r.ocr_text or "").strip().splitlines()[0][:80] if (r.ocr_text or "").strip() else "",
+            "created_at": (
+                r.created_at.isoformat() if isinstance(r.created_at, datetime) else str(r.created_at)
+            ),
+        }
+        for r in rows[:8]
+    ]
+    return {
+        "total": len(rows),
+        "by_verdict": dict(by_verdict),
+        "top_failed_rules": failed_rules.most_common(8),
+        "by_day": sorted(by_day.items())[-14:],
+        "recent": recent,
+        "request_id": _rid(),
+    }
 
 
 def _scan_out(rec: ScanRecord) -> ScanOut:
@@ -572,6 +704,9 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         has_image=rec.image_blob is not None,
         coord_w=coord_w,
         coord_h=coord_h,
+        product_name=rec.product_name or "",
+        brand_name=rec.brand_name or "",
+        category=rec.category or "",
         boxes=[
             WordBoxOut(
                 text=str(b.get("text", "")),

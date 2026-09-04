@@ -10,7 +10,7 @@ import { AlertDestructive } from "@/components/ui/alert";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toaster";
-import { ApiError, explainScan, fetchBlob, getScan, reviewScan, type Check } from "@/lib/api";
+import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateProduct, type Check } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function verdictClasses(v: string): string {
@@ -80,6 +80,10 @@ export default function ScanDetailPage(): React.JSX.Element {
   const [busy, setBusy] = React.useState<"review" | "pdf" | "explain" | null>(null);
   const [explanation, setExplanation] = React.useState("");
   const [showOcr, setShowOcr] = React.useState(false);
+  const [editingProduct, setEditingProduct] = React.useState(false);
+  const [pName, setPName] = React.useState("");
+  const [pBrand, setPBrand] = React.useState("");
+  const [pCat, setPCat] = React.useState("");
   const [imgSize, setImgSize] = React.useState<{ w: number; h: number } | null>(null);
 
   React.useEffect(() => {
@@ -179,6 +183,25 @@ export default function ScanDetailPage(): React.JSX.Element {
     }
   }
 
+  async function saveProduct(): Promise<void> {
+    if (!session) return;
+    setActionError("");
+    setBusy("review");
+    try {
+      await updateProduct(id, session.token, { product_name: pName, brand_name: pBrand, category: pCat });
+      setEditingProduct(false);
+      await queryClient.invalidateQueries({ queryKey: ["scan", id] });
+      await queryClient.invalidateQueries({ queryKey: ["scans"] });
+      await queryClient.invalidateQueries({ queryKey: ["stats"] });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Saving product failed.";
+      setActionError(msg);
+      notifyError(e, msg);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div>
       <p className="text-xs text-slate-500">
@@ -267,6 +290,50 @@ export default function ScanDetailPage(): React.JSX.Element {
         </div>
 
         <div className="flex flex-col gap-4 xl:col-span-2">
+          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold">Product identity</h2>
+              {!editingProduct && (
+                <button
+                  className="text-xs font-bold text-slate-700 hover:underline"
+                  onClick={() => {
+                    setPName(d.product_name);
+                    setPBrand(d.brand_name);
+                    setPCat(d.category);
+                    setEditingProduct(true);
+                  }}
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+            {!editingProduct ? (
+              <dl className="mt-2 grid grid-cols-[110px_1fr] gap-x-2 gap-y-1 text-[13px]">
+                <dt className="text-slate-500">Product</dt>
+                <dd className="font-semibold">{d.product_name || <span className="font-normal text-slate-400">—</span>}</dd>
+                <dt className="text-slate-500">Brand</dt>
+                <dd className="font-semibold">{d.brand_name || <span className="font-normal text-slate-400">—</span>}</dd>
+                <dt className="text-slate-500">Category</dt>
+                <dd className="font-semibold">{d.category || <span className="font-normal text-slate-400">—</span>}</dd>
+              </dl>
+            ) : (
+              <div className="mt-2 flex flex-col gap-2">
+                <input aria-label="Product name" value={pName} onChange={(e) => setPName(e.target.value)} placeholder="Product name"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <input aria-label="Brand" value={pBrand} onChange={(e) => setPBrand(e.target.value)} placeholder="Brand / maker"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <input aria-label="Category" value={pCat} onChange={(e) => setPCat(e.target.value)} placeholder="Category (e.g. Snacks)"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={busy !== null} onClick={saveProduct}>
+                    {busy === "review" ? "Saving…" : "Save"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditingProduct(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-slate-500">Auto-filled from the label at scan time; officers can correct it here.</p>
+          </div>
           <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-bold">OCR reading</h2>
             <dl className="mt-2 grid grid-cols-[110px_1fr] gap-x-2 gap-y-1 text-[13px]">

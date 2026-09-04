@@ -23,6 +23,9 @@ def ensure_columns() -> None:
         "ALTER TABLE scans ADD COLUMN boxes_json TEXT DEFAULT '[]'",
         "ALTER TABLE scans ADD COLUMN ocr_width INTEGER",
         "ALTER TABLE scans ADD COLUMN ocr_height INTEGER",
+        "ALTER TABLE scans ADD COLUMN product_name VARCHAR(160) DEFAULT ''",
+        "ALTER TABLE scans ADD COLUMN brand_name VARCHAR(160) DEFAULT ''",
+        "ALTER TABLE scans ADD COLUMN category VARCHAR(80) DEFAULT ''",
     ]
     with engine.begin() as conn:
         for ddl in alters:

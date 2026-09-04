@@ -40,3 +40,23 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-rise, .animate-pop, .spinner, .dots::after { animation: none; }
 }
+
+/* Touch-first: 44px targets, roomier type on coarse pointers (phone browsers). */
+@media (pointer: coarse) {
+  button, input, select, textarea, a {
+    min-height: 0;
+  }
+  button {
+    min-height: 44px;
+  }
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px; /* stops iOS auto-zoom on focus */
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  table.data, table {
+    font-size: 13.5px;
+  }
+}

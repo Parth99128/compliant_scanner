@@ -14,6 +14,9 @@ const ScanSummarySchema = z.object({
   ocr_engine: z.string(),
   created_at: z.string(),
   preview: z.string().default(""),
+  product_name: z.string().default(""),
+  brand_name: z.string().default(""),
+  category: z.string().default(""),
 });
 export type ScanSummary = z.infer<typeof ScanSummarySchema>;
 const ScanListSchema = z.array(ScanSummarySchema);
@@ -62,8 +65,16 @@ export function register(body: Credentials): Promise<Token> {
   return request("/auth/register", TokenSchema, { method: "POST", body: JSON.stringify(body) });
 }
 
-export function listScans(token: string): Promise<ScanSummary[]> {
-  return request("/scans", ScanListSchema, { method: "GET" }, token);
+export function listScans(
+  token: string,
+  params: { q?: string; verdict?: string; status?: string } = {}
+): Promise<ScanSummary[]> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.verdict && params.verdict !== "all") qs.set("verdict", params.verdict);
+  if (params.status && params.status !== "all") qs.set("status", params.status);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request(`/scans${suffix}`, ScanListSchema, { method: "GET" }, token);
 }
 
 const CheckSchema = z.object({
@@ -110,6 +121,9 @@ const ScanDetailSchema = z.object({
   has_image: z.boolean().default(false),
   coord_w: z.number().nullable().default(null),
   coord_h: z.number().nullable().default(null),
+  product_name: z.string().default(""),
+  brand_name: z.string().default(""),
+  category: z.string().default(""),
 });
 export type ScanDetail = z.infer<typeof ScanDetailSchema>;
 
@@ -152,6 +166,36 @@ export function reviewScan(id: string, token: string, decision: "confirm" | "ove
 export async function explainScan(id: string, token: string): Promise<string> {
   const r = await request(`/scans/${id}/explain`, ExplainSchema, { method: "POST", body: JSON.stringify({}) }, token);
   return r.explanation;
+}
+
+const StatsSchema = z.object({
+  total: z.number(),
+  by_verdict: z.record(z.string(), z.number()),
+  top_failed_rules: z.array(z.tuple([z.string(), z.number()])),
+  by_day: z.array(z.tuple([z.string(), z.number()])),
+  recent: z.array(
+    z.object({
+      id: z.string(),
+      verdict: z.string(),
+      status: z.string(),
+      product_name: z.string().default(""),
+      preview: z.string().default(""),
+      created_at: z.string(),
+    })
+  ),
+});
+export type StatsOverview = z.infer<typeof StatsSchema>;
+
+export function statsOverview(token: string): Promise<StatsOverview> {
+  return request("/stats/overview", StatsSchema, { method: "GET" }, token);
+}
+
+export function updateProduct(
+  id: string,
+  token: string,
+  body: { product_name: string; brand_name: string; category: string }
+): Promise<ScanDetail> {
+  return request(`/scans/${id}/product`, ScanDetailSchema, { method: "PATCH", body: JSON.stringify(body) }, token);
 }
 
 export interface ScanOptions {

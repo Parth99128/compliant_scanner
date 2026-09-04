@@ -6,7 +6,9 @@
 - `POST /validate` (DeclarationIn JSON) → `ComplianceOut {compliant, results[{rule_id, passed, message}], warnings[], request_id}`
 - `POST /scans` (multipart `file` + optional form `ppm`, `font_px`, `letter_px`, `panel_area_cm2`, `is_embossed`; Bearer required, 20/min) → `ScanOut {id, request_id, ocr_engine, ocr_text, ocr_confidence, font_height_mm, compliant, results, warnings, boxes[{text,x,y,w,h,confidence}]}`
 - `POST /scans/merge` (multipart `files` ×2–5 of the same label + same optional form fields; Bearer, 10/min) → one `ScanOut`: OCR lines unioned by confidence across angles, extracted + evaluated once, measurements from the best frame, engine tagged `+mergeN`
-- `GET /scans` (Bearer; own scans, admin sees all) → `ScanSummaryOut[]` (each adds `preview`: first OCR line)
+- `GET /scans` (Bearer; own scans, admin sees all; `?q=&verdict=&status=`) → `ScanSummaryOut[]` (each adds `preview`, `product_name`, `brand_name`, `category`; product auto-filled from extraction, overridable at upload)
+- `PATCH /scans/{id}/product` (owner/admin) `{product_name, brand_name, category}` → `ScanOut`
+- `GET /stats/overview` (Bearer; scoped to role) → `{total, by_verdict, top_failed_rules, by_day, recent}`
 - `GET /scans/{id}` (owner/admin) → `ScanOut` (adds `has_image`, `coord_w/h`: OCR box space; `boxes[]` now persisted)
 - `GET /scans/{id}/image` (owner/admin) → downscaled `image/jpeg` capture for the viewer (404 when absent)
 - `GET /scans/{id}/report` (owner/admin) → `application/pdf` download

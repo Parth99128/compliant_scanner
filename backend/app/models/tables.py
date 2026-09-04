@@ -28,7 +28,13 @@ class ScanRecord(Base):
     # Downscaled original capture for the scan viewer (nullable: pre-feature rows).
     image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, default=None)
     image_content_type: Mapped[str] = mapped_column(String(32), default="image/jpeg")
-    # OCR word boxes in preprocessed-image pixel space + that space's dims,
+    # Product identity: auto-filled from extraction at scan time, editable by
+    # officers afterwards (review/label correction workflow).
+    product_name: Mapped[str] = mapped_column(String(160), default="")
+    brand_name: Mapped[str] = mapped_column(String(160), default="")
+    category: Mapped[str] = mapped_column(
+        String(80), default=""
+    )  # OCR word boxes in preprocessed-image pixel space + that space's dims,
     # so the viewer overlay aligns at any display size (SVG viewBox).
     boxes_json: Mapped[str] = mapped_column(Text, default="[]")
     ocr_width: Mapped[int] = mapped_column(nullable=True, default=None)

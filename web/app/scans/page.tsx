@@ -12,7 +12,7 @@ import {
 } from "@tanstack/react-table";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
@@ -32,11 +32,18 @@ const columns: ColumnDef<ScanSummary>[] = [
     cell: ({ row }) => <span className="whitespace-nowrap tabular-nums">{row.original.created_at.slice(0, 16).replace("T", " ")}</span>,
   },
   {
-    accessorKey: "preview",
-    header: "Label",
+    accessorKey: "product_name",
+    header: "Product",
     cell: ({ row }) => (
-      <span className="block max-w-64 truncate font-medium" title={row.original.preview}>
-        {row.original.preview || <span className="text-slate-400">—</span>}
+      <span className="block max-w-56">
+        <span className="block truncate text-[13px] font-bold" title={row.original.product_name || row.original.preview}>
+          {row.original.product_name || row.original.preview || <span className="font-normal text-slate-400">—</span>}
+        </span>
+        {(row.original.brand_name || row.original.category) && (
+          <span className="block truncate text-[11px] text-slate-500">
+            {[row.original.brand_name, row.original.category].filter(Boolean).join(" · ")}
+          </span>
+        )}
       </span>
     ),
     enableSorting: false,
@@ -80,12 +87,13 @@ const columns: ColumnDef<ScanSummary>[] = [
   },
 ];
 
-export default function ScansPage(): React.JSX.Element {
+function HistoryInner(): React.JSX.Element {
   const router = useRouter();
+  const params = useSearchParams();
   const { session, ready } = useAuth();
   const mounted = useMounted();
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "created_at", desc: true }]);
-  const [globalFilter, setGlobalFilter] = React.useState("");
+  const [search, setSearch] = React.useState(params.get("q") ?? "");
   const [verdict, setVerdict] = React.useState("all");
 
   React.useEffect(() => {
@@ -93,17 +101,16 @@ export default function ScansPage(): React.JSX.Element {
   }, [ready, session, router]);
 
   const scans = useQuery({
-    queryKey: ["scans"],
-    queryFn: () => listScans(session?.token ?? ""),
+    queryKey: ["scans", search, verdict],
+    queryFn: () => listScans(session?.token ?? "", { q: search || undefined, verdict }),
     enabled: ready && !!session,
   });
 
   const table = useReactTable({
     data: scans.data ?? [],
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -111,28 +118,25 @@ export default function ScansPage(): React.JSX.Element {
     initialState: { pagination: { pageSize: 10 } },
   });
 
-  React.useEffect(() => {
-    table.getColumn("verdict")?.setFilterValue(verdict === "all" ? undefined : verdict);
-  }, [verdict, table]);
-
   if (!mounted || !ready || !session) return <p className="text-sm text-slate-500">Loading…</p>;
 
   return (
-    <div>
+    <div className="animate-rise">
       <p className="text-xs text-slate-500">Inspect / Scan history</p>
-      <h1 className="text-xl font-bold">Scan history</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">Product repository</h1>
       <div className="mb-3 mt-4 flex flex-wrap items-center gap-2">
         <input
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder="Search label, engine, ID…"
-          className="min-w-56 rounded-md border border-slate-300 px-3 py-2 text-sm"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search products, brands, label text…"
+          aria-label="Search repository"
+          className="min-w-56 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm sm:max-w-xs sm:flex-none"
         />
         {(["all", "COMPLIANT", "NON_COMPLIANT", "INCOMPLETE"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setVerdict(v)}
-            className={`rounded-full border px-3 py-1 text-xs font-bold ${
+            className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
               verdict === v ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-600"
             }`}
           >
@@ -140,12 +144,12 @@ export default function ScansPage(): React.JSX.Element {
           </button>
         ))}
         <span className="ml-auto text-xs text-slate-500">
-          {table.getFilteredRowModel().rows.length} of {scans.data?.length ?? 0} scans
+          {table.getFilteredRowModel().rows.length} of {scans.data?.length ?? 0} records
         </span>
       </div>
       {scans.isError && (
         <p className="mb-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
-          Could not load scans. Check that the backend is running.
+          Could not load the repository. Check that the backend is running.
         </p>
       )}
       <Table>
@@ -161,8 +165,9 @@ export default function ScansPage(): React.JSX.Element {
         <TableBody>
           {table.getRowModel().rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-slate-500">
-                {scans.isPending ? "Loading…" : "No scans match."}
+              <TableCell colSpan={6} className="py-10 text-center">
+                <p className="font-bold text-slate-700">No records match</p>
+                <p className="text-xs text-slate-500">Try a different search, or run a scan from the Scan tab.</p>
               </TableCell>
             </TableRow>
           ) : (
@@ -188,5 +193,13 @@ export default function ScansPage(): React.JSX.Element {
         </Button>
       </div>
     </div>
+  );
+}
+
+export default function ScansPage(): React.JSX.Element {
+  return (
+    <React.Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
+      <HistoryInner />
+    </React.Suspense>
   );
 }

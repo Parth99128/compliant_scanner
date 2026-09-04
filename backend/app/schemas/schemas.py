@@ -76,6 +76,9 @@ class ScanOut(BaseModel):
     has_image: bool = False
     coord_w: int | None = None  # OCR box coordinate space (preprocessed px)
     coord_h: int | None = None
+    product_name: str = ""
+    brand_name: str = ""
+    category: str = ""
 
 
 class ScanSummaryOut(BaseModel):
@@ -85,7 +88,10 @@ class ScanSummaryOut(BaseModel):
     status: str = "pending_review"
     ocr_engine: str
     created_at: str
-    preview: str = ""  # first line of OCR text (label excerpt for lists)
+    preview: str = ""
+    product_name: str = ""
+    brand_name: str = ""
+    category: str = ""  # first line of OCR text (label excerpt for lists)
 
 
 class ReviewIn(BaseModel):
