@@ -42,7 +42,10 @@ def _load():
     if _model is not None:
         return _model, _processor
     import torch  # lazy: torch stays optional for default installs
-    from transformers import AutoModelForCausalLM, AutoProcessor  # type: ignore[import-untyped]  # no py.typed marker
+    from transformers import (  # type: ignore[import-untyped]  # no py.typed marker
+        AutoModelForCausalLM,
+        AutoProcessor,
+    )
 
     settings = get_settings()
     model_id = settings.florence_model
