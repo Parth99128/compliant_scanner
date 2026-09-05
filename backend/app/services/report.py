@@ -131,15 +131,19 @@ def build_report_pdf(
     ]
     lat, lon = getattr(scan, "scan_lat", None), getattr(scan, "scan_lon", None)
     if lat is not None and lon is not None:
-        story.append(Paragraph(f"Inspection location (device GPS at upload): {lat:.5f}, {lon:.5f}", styles["Normal"]))
+        story.append(
+            Paragraph(f"Inspection location (device GPS at upload): {lat:.5f}, {lon:.5f}", styles["Normal"])
+        )
     else:
-        story.append(Paragraph("Inspection location: not provided (GPS unavailable or desktop upload)", styles["Normal"]))
+        story.append(
+            Paragraph(
+                "Inspection location: not provided (GPS unavailable or desktop upload)", styles["Normal"]
+            )
+        )
     story.append(Spacer(1, 4 * mm))
 
     story.append(Paragraph("Findings — with captured values", h3))
-    rows = [
-        [Paragraph("Rule", cell_head), Paragraph("Status", cell_head), Paragraph("Detail", cell_head)]
-    ]
+    rows = [[Paragraph("Rule", cell_head), Paragraph("Status", cell_head), Paragraph("Detail", cell_head)]]
     failed_ids: list[str] = []
     for r in results:
         status = str(r.get("status", "PASS"))
@@ -176,7 +180,9 @@ def build_report_pdf(
         story.append(Paragraph(f"Warning: {escape(w)}", styles["Normal"]))
 
     story.append(Paragraph("Visual evidence", h3))
-    annotated = _annotated_capture(scan.image_blob, boxes or [], coord_w, coord_h) if scan.image_blob else None
+    annotated = (
+        _annotated_capture(scan.image_blob, boxes or [], coord_w, coord_h) if scan.image_blob else None
+    )
     if annotated:
         from PIL import Image
 

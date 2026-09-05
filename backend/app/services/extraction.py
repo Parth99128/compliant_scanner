@@ -37,8 +37,18 @@ ADDRESS_HINT_RE = re.compile(r"\b(?:plot|street|road|sector|nagar|mumbai|delhi|i
 DATE_FMTS = ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%Y-%m-%d", "%b %Y", "%B %Y", "%m/%Y")
 
 _MONTHS_FULL = (
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 )
 
 # OCR glyph confusions, applied ONLY inside tightly-anchored contexts

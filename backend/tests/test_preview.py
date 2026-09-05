@@ -33,7 +33,9 @@ def _auth() -> str:
 
 def test_sharpness_orders_sharp_above_blur():
     sharp = _png_bytes()
-    blurred = Image.open(io.BytesIO(sharp)).filter(__import__("PIL.ImageFilter", fromlist=["x"]).GaussianBlur(5))
+    blurred = Image.open(io.BytesIO(sharp)).filter(
+        __import__("PIL.ImageFilter", fromlist=["x"]).GaussianBlur(5)
+    )
     buf = io.BytesIO()
     blurred.save(buf, format="PNG")
     s_sharp = sharpness_score(sharp)

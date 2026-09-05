@@ -130,9 +130,7 @@ def _valid_gps(lat: float | None, lon: float | None) -> tuple[float | None, floa
         return None, None
 
 
-def _choose_measured_index(
-    confidences: list[float], numeral_mms: list[float | None], best_i: int
-) -> int:
+def _choose_measured_index(confidences: list[float], numeral_mms: list[float | None], best_i: int) -> int:
     """Angle Rule 7 sizes are measured on: strongest read AMONG calibrated frames.
 
     A high-confidence macro with no card/scale in frame must not overrule a
@@ -146,9 +144,7 @@ def _choose_measured_index(
     return max(calibrated, key=lambda i: (confidences[i], i))
 
 
-def _frame_entry(
-    index: int, out: "_PipelineOut", added: int, *, is_best: bool, measured: bool
-) -> dict:
+def _frame_entry(index: int, out: "_PipelineOut", added: int, *, is_best: bool, measured: bool) -> dict:
     # Keep the full box set (same [:500] cap as the legacy best-frame path):
     # dense panels hold 300+ words and truncating drops overlays off the
     # bottom half (ingredients, origin strip) while text still extracts.
@@ -768,7 +764,10 @@ async def merge_scans(
     boxes_json, coord_w, coord_h = _boxes_payload(best)
     pname, bname, cat = _product_fields(decl, product_name, brand_name, category)
     lat, lon = _valid_gps(scan_lat, scan_lon)
-    frames = [_frame_entry(i, o, added.get(i, 0), is_best=(i == best_i), measured=(i == m_i)) for i, o in enumerate(outs)]
+    frames = [
+        _frame_entry(i, o, added.get(i, 0), is_best=(i == best_i), measured=(i == m_i))
+        for i, o in enumerate(outs)
+    ]
     rec = ScanRecord(
         owner_id=user.id,
         request_id=_rid(),
@@ -1041,9 +1040,7 @@ def scan_frame_image(
     """One non-best merge angle (the best frame lives at /scans/{id}/image)."""
     _get_scan(scan_id, user, db)
     row = (
-        db.query(ScanImage)
-        .filter(ScanImage.scan_id == scan_id, ScanImage.frame_index == frame_index)
-        .first()
+        db.query(ScanImage).filter(ScanImage.scan_id == scan_id, ScanImage.frame_index == frame_index).first()
     )
     if not row or not row.image_blob:
         raise HTTPException(status_code=404, detail="No stored image for this frame")
