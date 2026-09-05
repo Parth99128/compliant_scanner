@@ -104,6 +104,21 @@ const BoxSchema = z.object({
 });
 export type WordBox = z.infer<typeof BoxSchema>;
 
+const FrameInfoSchema = z.object({
+  index: z.number(),
+  is_best: z.boolean().default(false),
+  measured: z.boolean().default(false),
+  url: z.string().default(""),
+  ocr_confidence: z.number().default(0),
+  word_count: z.number().default(0),
+  words_added: z.number().default(0),
+  boxes: z.array(BoxSchema).default([]),
+  coord_w: z.number().nullable().default(null),
+  coord_h: z.number().nullable().default(null),
+});
+export type FrameInfo = z.infer<typeof FrameInfoSchema>;
+const FrameListSchema = z.array(FrameInfoSchema);
+
 const ScanDetailSchema = z.object({
   id: z.string(),
   request_id: z.string(),
@@ -126,6 +141,8 @@ const ScanDetailSchema = z.object({
   brand_name: z.string().default(""),
   category: z.string().default(""),
   ppm_used: z.number().nullable().default(null),
+  frames: z.array(FrameInfoSchema).default([]),
+  measured_index: z.number().nullable().default(null),
 });
 export type ScanDetail = z.infer<typeof ScanDetailSchema>;
 
@@ -138,6 +155,10 @@ const ExplainSchema = z.object({
 
 export function getScan(id: string, token: string): Promise<ScanDetail> {
   return request(`/scans/${id}`, ScanDetailSchema, { method: "GET" }, token);
+}
+
+export function listFrames(id: string, token: string): Promise<FrameInfo[]> {
+  return request(`/scans/${id}/images`, FrameListSchema, { method: "GET" }, token);
 }
 
 export async function fetchBlob(path: string, token: string): Promise<Blob> {

@@ -30,6 +30,7 @@ def ensure_columns() -> None:
         "ALTER TABLE scans ADD COLUMN brand_name VARCHAR(160) DEFAULT ''",
         "ALTER TABLE scans ADD COLUMN category VARCHAR(80) DEFAULT ''",
         "ALTER TABLE scans ADD COLUMN ppm_used FLOAT",
+        "ALTER TABLE scans ADD COLUMN frames_json TEXT DEFAULT '[]'",
     ]
     with engine.begin() as conn:
         for ddl in alters:

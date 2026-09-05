@@ -19,8 +19,10 @@ from app.services.ocr import run_ocr, word_boxes  # noqa: E402
 from app.services.rule_engine import evaluate_compliance  # noqa: E402
 from app.services.vision import (  # noqa: E402
     detect_ppm_from_reference_card,
+    detect_rotation_degrees,
     font_height_mm,
     preprocess_for_ocr,
+    upright_image_bytes,
 )
 
 
@@ -39,6 +41,25 @@ def extract_label(image_bytes: bytes, ppm: float | None = None) -> dict:
         ppm = detect_ppm_from_reference_card(image_bytes)
     ocr = run_ocr(clean)
     boxes = word_boxes(clean, ocr.config)
+    # Same gated rotation as the API pipeline: only a weak read may be
+    # sideways — a strong read is already upright, never rotate it.
+    if ocr.confidence < 60:
+        try:
+            angle = detect_rotation_degrees(clean)
+        except Exception:
+            angle = 0
+        if angle:
+            try:
+                upright = upright_image_bytes(clean)
+            except Exception:
+                upright = clean
+            if upright != clean:
+                try:
+                    ocr_r = run_ocr(upright)
+                except Exception:
+                    ocr_r = None
+                if ocr_r and ocr_r.text.strip() and ocr_r.confidence > ocr.confidence:
+                    ocr, boxes, clean = ocr_r, word_boxes(upright, ocr_r.config), upright
     decl = extract_fields(ocr.text)
     med_px = _median([float(b.h) for b in boxes]) if boxes else None
     font_mm = font_height_mm(med_px, ppm) if med_px and ppm else None

@@ -13,12 +13,13 @@ from app.core.logging import get_logger, request_id_ctx
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, decode_token, hash_password, verify_password
 from app.db.session import Base, engine, ensure_columns, get_db
-from app.models.tables import ScanRecord, User
+from app.models.tables import ScanImage, ScanRecord, User
 from app.schemas.schemas import (
     CheckOut,
     ComplianceOut,
     DeclarationIn,
     ExplainOut,
+    FrameOut,
     RegisterIn,
     ReviewIn,
     ScanOut,
@@ -41,10 +42,12 @@ from app.services.rule_engine import (
 )
 from app.services.vision import (
     detect_ppm_from_reference_card,
+    detect_rotation_degrees,
     font_height_mm,
     mask_quads,
     preprocess_for_ocr,
     sharpness_score,
+    upright_image_bytes,
 )
 
 router = APIRouter()
@@ -107,6 +110,117 @@ def _stored_boxes(rec: ScanRecord) -> tuple[list[dict], int | None, int | None]:
         return boxes if isinstance(boxes, list) else [], w, h
     except Exception:
         return [], rec.ocr_width, rec.ocr_height
+
+
+def _frame_url(scan_id: str, index: int, is_best: bool) -> str:
+    if is_best:
+        return f"/scans/{scan_id}/image"
+    return f"/scans/{scan_id}/image/{index}"
+
+
+def _choose_measured_index(
+    confidences: list[float], numeral_mms: list[float | None], best_i: int
+) -> int:
+    """Angle Rule 7 sizes are measured on: strongest read AMONG calibrated frames.
+
+    A high-confidence macro with no card/scale in frame must not overrule a
+    slightly weaker wide shot that carries the millimetre scale. Falls back to
+    the best frame when nothing is calibrated (rules then report NOT_ASSESSABLE).
+    Pure function, unit-tested.
+    """
+    calibrated = [i for i, mm in enumerate(numeral_mms) if mm is not None]
+    if not calibrated:
+        return best_i
+    return max(calibrated, key=lambda i: (confidences[i], i))
+
+
+def _frame_entry(
+    index: int, out: "_PipelineOut", added: int, *, is_best: bool, measured: bool
+) -> dict:
+    return {
+        "index": index,
+        "is_best": is_best,
+        "measured": measured,
+        "ocr_confidence": out.ocr_confidence,
+        "word_count": len(out.boxes),
+        "words_added": added,
+        "boxes": [dataclasses.asdict(b) for b in out.boxes[:200]],
+        "coord_w": out.coord_w,
+        "coord_h": out.coord_h,
+    }
+
+
+def _boxed_list(raw_boxes: object) -> list[WordBoxOut]:
+    """Coerce stored box dicts to WordBoxOut, skipping corrupt rows."""
+    out: list[WordBoxOut] = []
+    if not isinstance(raw_boxes, list):
+        return out
+    for b in raw_boxes[:500]:
+        if not isinstance(b, dict):
+            continue
+        try:
+            out.append(
+                WordBoxOut(
+                    text=str(b.get("text", "")),
+                    x=int(b.get("x", 0)),
+                    y=int(b.get("y", 0)),
+                    w=int(b.get("w", 0)),
+                    h=int(b.get("h", 0)),
+                    confidence=float(b.get("confidence", 0.0)),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _frames_out(rec: ScanRecord) -> list[FrameOut]:
+    """Gallery entries for every uploaded angle, oldest API shape tolerated."""
+    try:
+        stored = json.loads(rec.frames_json or "[]")
+    except Exception:
+        stored = []
+    if isinstance(stored, list) and stored:
+        out = []
+        for f in stored:
+            if not isinstance(f, dict):
+                continue
+            idx = int(f.get("index", 0))
+            best = bool(f.get("is_best", False))
+            out.append(
+                FrameOut(
+                    index=idx,
+                    is_best=best,
+                    measured=bool(f.get("measured", best)),
+                    url=_frame_url(rec.id, idx, best),
+                    ocr_confidence=float(f.get("ocr_confidence", 0.0)),
+                    word_count=int(f.get("word_count", 0)),
+                    words_added=int(f.get("words_added", 0)),
+                    boxes=_boxed_list(f.get("boxes")),
+                    coord_w=f.get("coord_w"),
+                    coord_h=f.get("coord_h"),
+                )
+            )
+        return out
+    # Pre-feature rows: only the primary capture survives.
+    if rec.image_blob:
+        return [FrameOut(index=0, is_best=True, measured=True, url=_frame_url(rec.id, 0, True))]
+    return []
+
+
+def _measured_index_out(rec: ScanRecord) -> int | None:
+    """Angle index Rule 7 was measured on (flagged at scan time)."""
+    try:
+        stored = json.loads(rec.frames_json or "[]")
+    except Exception:
+        stored = []
+    if isinstance(stored, list):
+        for f in stored:
+            if isinstance(f, dict) and f.get("measured"):
+                return int(f.get("index", 0))
+    if rec.image_blob:
+        return 0
+    return None
 
 
 def _clean_dims(clean: bytes) -> tuple[int | None, int | None]:
@@ -331,6 +445,27 @@ def _run_pipeline(
     clean = preprocess_for_ocr(raw)
     ocr = run_ocr(clean)
     boxes = word_boxes(clean, ocr.config)
+    # Orientation second pass: a sideways/upside-down capture reads weak.
+    # Rotate ONLY then (a strong read is already upright — rotating it could
+    # only hurt, e.g. labels mixing horizontal panels with a vertical strip).
+    # Keep whichever read is stronger. Clean scans pay one cheap OSD call.
+    if ocr.confidence < 60:
+        try:
+            angle = detect_rotation_degrees(clean)
+        except Exception:
+            angle = 0
+        if angle:
+            try:
+                upright = upright_image_bytes(clean)
+            except Exception:
+                upright = clean
+            if upright != clean:
+                try:
+                    ocr_r = run_ocr(upright)
+                except Exception:
+                    ocr_r = None
+                if ocr_r and ocr_r.text.strip() and ocr_r.confidence > ocr.confidence:
+                    ocr, boxes, clean = ocr_r, word_boxes(upright, ocr_r.config), upright
     # Robustness second pass: when the first read is weak and a barcode is
     # present, mask the bars (VLM/OCR hallucinate digit soup on them) and
     # re-read; keep whichever read is stronger. Clean scans pay nothing.
@@ -454,6 +589,7 @@ async def scan_image(
     img_blob, img_type = _store_image(raw)
     boxes_json, coord_w, coord_h = _boxes_payload(out)
     pname, bname, cat = _product_fields(out.decl, product_name, brand_name, category)
+    frames = [_frame_entry(0, out, len(out.boxes), is_best=True, measured=True)]
     rec = ScanRecord(
         owner_id=user.id,
         request_id=_rid(),
@@ -473,6 +609,7 @@ async def scan_image(
         brand_name=bname,
         category=cat,
         ppm_used=out.resolved_ppm,
+        frames_json=json.dumps(frames),
     )
     db.add(rec)
     db.commit()
@@ -498,24 +635,29 @@ async def scan_image(
         brand_name=rec.brand_name,
         category=rec.category,
         ppm_used=rec.ppm_used,
+        frames=_frames_out(rec),
+        measured_index=_measured_index_out(rec),
     )
 
 
-def _merge_ocr_lines(per_image: list[tuple[float, str]]) -> str:
+def _merge_ocr_lines(per_image: list[tuple[int, float, str]]) -> tuple[str, dict[int, int]]:
     """Union of OCR lines across captures, best-confidence image first, de-duplicated.
 
     Multi-angle shots of one label overlap heavily; the union recovers words
     any single angle lost to glare/curve/blur, without double counting.
+    Returns (merged text, {frame index: lines only that frame contributed}).
     """
     seen: set[str] = set()
     merged: list[str] = []
-    for _conf, text in sorted(per_image, key=lambda t: -t[0]):
+    added: dict[int, int] = {}
+    for idx, _conf, text in sorted(per_image, key=lambda t: -t[1]):
         for line in (text or "").splitlines():
             norm = " ".join(line.split())
             if len(norm) >= 2 and norm.lower() not in seen:
                 seen.add(norm.lower())
                 merged.append(norm)
-    return "\n".join(merged)
+                added[idx] = added.get(idx, 0) + 1
+    return "\n".join(merged), added
 
 
 @router.post("/scans/merge", response_model=ScanOut, tags=["scans"])
@@ -562,14 +704,23 @@ async def merge_scans(
         raise HTTPException(status_code=502, detail="OCR processing failed")
     best_i = max(range(len(outs)), key=lambda i: (outs[i].ocr_confidence, len(outs[i].ocr_text)))
     best = outs[best_i]
-    merged_text = _merge_ocr_lines([(o.ocr_confidence, o.ocr_text) for o in outs])
+    merged_text, added = _merge_ocr_lines([(i, o.ocr_confidence, o.ocr_text) for i, o in enumerate(outs)])
     merged_decl = extract_fields(merged_text)
-    # Text fields come from the union; measurements stay with the best frame.
+    # Measure on the strongest CALIBRATED frame (scale + words), not blindly
+    # the best read — a sharp macro with no card must not overrule a wide
+    # shot carrying the millimetre scale.
+    m_i = _choose_measured_index(
+        [o.ocr_confidence for o in outs],
+        [o.font_mm if o.boxes else None for o in outs],
+        best_i,
+    )
+    measure = outs[m_i]
+    # Text fields come from the union; measurements stay with the measured frame.
     decl = dataclasses.replace(
         merged_decl,
-        min_numeral_height_mm=best.decl.min_numeral_height_mm,
-        min_letter_height_mm=best.decl.min_letter_height_mm,
-        min_width_to_height_ratio=best.decl.min_width_to_height_ratio,
+        min_numeral_height_mm=measure.decl.min_numeral_height_mm,
+        min_letter_height_mm=measure.decl.min_letter_height_mm,
+        min_width_to_height_ratio=measure.decl.min_width_to_height_ratio,
         is_embossed=is_embossed,
         panel_area_cm2=panel_area_cm2,
     )
@@ -583,17 +734,23 @@ async def merge_scans(
         f"Merged {len(raws)} captures (best single-frame confidence "
         f"{best.ocr_confidence}%); text combined by confidence, evaluated once."
     )
+    if m_i != best_i:
+        warnings.append(
+            f"Type size measured on angle {m_i + 1} (it carries the mm scale); "
+            f"text led by angle {best_i + 1}."
+        )
     engine = f"{best.ocr_engine}+merge{len(raws)}"
     img_blob, img_type = _store_image(raws[best_i])
     boxes_json, coord_w, coord_h = _boxes_payload(best)
     pname, bname, cat = _product_fields(decl, product_name, brand_name, category)
+    frames = [_frame_entry(i, o, added.get(i, 0), is_best=(i == best_i), measured=(i == m_i)) for i, o in enumerate(outs)]
     rec = ScanRecord(
         owner_id=user.id,
         request_id=_rid(),
         ocr_text=merged_text[:8000],
         ocr_engine=engine,
         ocr_confidence=best.ocr_confidence,
-        font_height_mm=best.font_mm,
+        font_height_mm=measure.font_mm,
         compliant=report.compliant,
         verdict=report.verdict,
         results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
@@ -605,11 +762,21 @@ async def merge_scans(
         product_name=pname,
         brand_name=bname,
         category=cat,
-        ppm_used=best.resolved_ppm,
+        ppm_used=measure.resolved_ppm,
+        frames_json=json.dumps(frames),
     )
     db.add(rec)
     db.commit()
     db.refresh(rec)
+    # Keep every non-best angle so the viewer can show the full gallery.
+    # The best frame stays on ScanRecord.image_blob (legacy primary).
+    for i, raw in enumerate(raws):
+        if i == best_i:
+            continue
+        blob, ctype = _store_image(raw)
+        if blob is not None:
+            db.add(ScanImage(scan_id=rec.id, frame_index=i, image_blob=blob, image_content_type=ctype))
+    db.commit()
     log.info("scan_merged", scan_id=rec.id, compliant=report.compliant, frames=len(raws))
     return ScanOut(
         id=rec.id,
@@ -631,6 +798,8 @@ async def merge_scans(
         brand_name=rec.brand_name,
         category=rec.category,
         ppm_used=rec.ppm_used,
+        frames=_frames_out(rec),
+        measured_index=_measured_index_out(rec),
     )
 
 
@@ -799,6 +968,8 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         brand_name=rec.brand_name or "",
         category=rec.category or "",
         ppm_used=rec.ppm_used,
+        frames=_frames_out(rec),
+        measured_index=_measured_index_out(rec),
         boxes=[
             WordBoxOut(
                 text=str(b.get("text", "")),
@@ -823,6 +994,31 @@ def scan_image_file(scan_id: str, db: Session = Depends(get_db), user: User = De
     return Response(
         content=bytes(rec.image_blob),
         media_type=rec.image_content_type or "image/jpeg",
+    )
+
+
+@router.get("/scans/{scan_id}/images", response_model=list[FrameOut], tags=["scans"])
+def scan_images(scan_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Gallery: every uploaded angle with its own analysis summary (upload order)."""
+    return _frames_out(_get_scan(scan_id, user, db))
+
+
+@router.get("/scans/{scan_id}/image/{frame_index}", tags=["scans"])
+def scan_frame_image(
+    scan_id: str, frame_index: int, db: Session = Depends(get_db), user: User = Depends(current_user)
+):
+    """One non-best merge angle (the best frame lives at /scans/{id}/image)."""
+    _get_scan(scan_id, user, db)
+    row = (
+        db.query(ScanImage)
+        .filter(ScanImage.scan_id == scan_id, ScanImage.frame_index == frame_index)
+        .first()
+    )
+    if not row or not row.image_blob:
+        raise HTTPException(status_code=404, detail="No stored image for this frame")
+    return Response(
+        content=bytes(row.image_blob),
+        media_type=row.image_content_type or "image/jpeg",
     )
 
 

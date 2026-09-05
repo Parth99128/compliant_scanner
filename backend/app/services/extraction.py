@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 from datetime import date, datetime
 
@@ -17,11 +18,11 @@ NET_QTY_RE = re.compile(
 )
 NET_QTY_FALLBACK_RE = re.compile(r"\b([\d.,]+)\s*(kg|g\b|mg|ml|l\b|litre?s?)\b", re.IGNORECASE)
 MFG_RE = re.compile(
-    r"(?:mfg|mtg|manufactured|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}\s+\d{4}|\d{4}[/\-]\d{1,2})",
+    r"(?:mfg|meg|mtg|manufactured|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}\s+\d{4}|\d{4}[/\-]\d{1,2})",
     re.IGNORECASE,
 )
 EXP_RE = re.compile(
-    r"(?:exp|expr|expiry|best\s*before|use\s*by)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}\s+\d{4}|\d+\s*(?:months?|days?|years?))",
+    r"(?:exp|exf|expr|expiry|best\s*before|use\s*by)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}\s+\d{4}|\d+\s*(?:months?|days?|years?))",
     re.IGNORECASE,
 )
 # Fallback: bare dates with no keyword anchor (common when OCR drops the label word).
@@ -34,6 +35,110 @@ ORIGIN_RE = re.compile(r"(?:country\s*o[ft]\s*origin|made\s*in)\s*[:\-]?\s*([A-Z
 ADDRESS_HINT_RE = re.compile(r"\b(?:plot|street|road|sector|nagar|mumbai|delhi|india|\d{6})\b", re.IGNORECASE)
 
 DATE_FMTS = ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%Y-%m-%d", "%b %Y", "%B %Y", "%m/%Y")
+
+_MONTHS_FULL = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+# OCR glyph confusions, applied ONLY inside tightly-anchored contexts
+# (amount after MRP, digit runs in dates) — never to free text.
+_DIGIT_FIX_TABLE = str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1", "S": "5", "s": "5", "B": "8"})
+_MRP_AMT_RE = re.compile(
+    r"((?:MRP|M\.?R\.?P\.?)\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*)([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
+    re.IGNORECASE,
+)
+_DATE_TOKEN_RE = re.compile(r"\b([\dIlO]{1,2})[/\-.]([\dIlO]{1,2})[/\-.]([\dIlO]{2,4})\b")
+_MONTH_YEAR_RE = re.compile(r"\b([A-Za-z]{3,9})\s+(20\d{2})\b")
+_NETQTY_LINE_RE = re.compile(r"net\s*(?:q?t[yl]|quantity|wt|weight|vol|content|o?t?y)", re.IGNORECASE)
+
+
+def _fix_month_tokens(text: str) -> str:
+    """Repair OCR-mangled month names before a year ("JANUARV 2025" -> "January 2025").
+
+    Only fires on close matches (ratio >= 0.8) so real words ("BATCH 2025")
+    pass through untouched. Pure function, never raises.
+    """
+
+    def _rep(m: re.Match) -> str:
+        word, year = m.group(1), m.group(2)
+        if any(word.lower() == mth.lower() for mth in _MONTHS_FULL):
+            return m.group(0)
+        best = difflib.get_close_matches(word.title(), list(_MONTHS_FULL), n=1, cutoff=0.8)
+        return f"{best[0]} {year}" if best else m.group(0)
+
+    try:
+        return _MONTH_YEAR_RE.sub(_rep, text)
+    except Exception:
+        return text
+
+
+def _fix_qty_units(text: str) -> str:
+    """Repair unit confusions, but ONLY on net-quantity lines ("500 9" -> "500 g").
+
+    Line-scoped so counts like "Pack of 9" are never touched. Never raises.
+    """
+    try:
+        out = []
+        for ln in text.splitlines():
+            if _NETQTY_LINE_RE.search(ln):
+                ln = re.sub(r"(?<=\d)\s*9\b", " g", ln)
+                ln = re.sub(r"(?<=\d)\s*q\b", " g", ln, flags=re.IGNORECASE)
+            out.append(ln)
+        return "\n".join(out)
+    except Exception:
+        return text
+
+
+def _fix_mrp_digits(text: str) -> str:
+    """Repair digit confusions inside MRP amounts ("Rs. 12O" -> "Rs. 120").
+
+    Requires at least two real digits in the amount so stray letters never
+    fabricate a price. Never raises.
+    """
+    try:
+
+        def _rep(m: re.Match) -> str:
+            raw = m.group(2)
+            if sum(c.isdigit() for c in raw) < 2:
+                return m.group(0)
+            return m.group(1) + raw.translate(_DIGIT_FIX_TABLE)
+
+        return _MRP_AMT_RE.sub(_rep, text)
+    except Exception:
+        return text
+
+
+def _fix_date_tokens(text: str) -> str:
+    """Repair digit confusions inside date-like runs ("0l/01/2025" -> "01/01/2025").
+
+    Separators are normalized to "/" (a format _parse_date already handles).
+    Tokens that are not all-digits after repair are left alone. Never raises.
+    """
+    try:
+
+        def _rep(m: re.Match) -> str:
+            parts = [m.group(1).translate(_DIGIT_FIX_TABLE), m.group(2).translate(_DIGIT_FIX_TABLE)]
+            year = m.group(3).translate(_DIGIT_FIX_TABLE)
+            if not all(p and all(c.isdigit() for c in p) for p in (*parts, year)):
+                return m.group(0)
+            return f"{parts[0]}/{parts[1]}/{year}"
+
+        return _DATE_TOKEN_RE.sub(_rep, text)
+    except Exception:
+        return text
+
+
+def normalize_ocr_text(text: str) -> str:
+    """Conservative OCR-error repair before field extraction. Idempotent, never raises."""
+    try:
+        text = _fix_month_tokens(text)
+        text = _fix_qty_units(text)
+        text = _fix_mrp_digits(text)
+        text = _fix_date_tokens(text)
+        return text
+    except Exception:
+        return text
 
 
 def _parse_date(s: str) -> date | None:
@@ -138,7 +243,7 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
 
 
 def extract_fields(ocr_text: str) -> ProductDeclaration:
-    text = ocr_text or ""
+    text = normalize_ocr_text(ocr_text or "")
     m = MRP_RE.search(text)
     mrp_val = _norm_num(m.group(1)) if m else None
     incl_taxes = bool(INCL_TAXES_RE.search(text))

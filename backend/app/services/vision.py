@@ -8,6 +8,7 @@ files are present under models/; otherwise falls back to cubic upscaling.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 # Standard credit-card reference (ISO/IEC 7810 ID-1), usable as alignment stencil.
 CARD_W_MM = 85.60
@@ -89,6 +90,7 @@ def preprocess_for_ocr(image_bytes: bytes) -> bytes:
         if img is None:
             return image_bytes
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = _deskew_array(gray)  # straighten tilted phone shots before OCR
         gray = cv2.bilateralFilter(gray, 5, 50, 50)
         # Polarity-aware binarization: Tesseract needs dark text on a light
         # background. Light-on-dark labels (white print on a red can, black
@@ -139,6 +141,160 @@ def sharpness_score(image_bytes: bytes) -> float | None:
         return round(float(cv2.Laplacian(img, cv2.CV_64F).var()), 1)
     except Exception:
         return None
+
+
+def estimate_skew_angle(image_bytes: bytes) -> float | None:
+    """Dominant text skew in degrees, normalized to [-45, 45). None when undetectable.
+
+    Positive = clockwise tilt. None when opencv is missing, the image is
+    undecodable, or there is too little foreground text. Never raises.
+    """
+    try:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        return None
+    try:
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        gray = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+        if gray is None:
+            return None
+        return _skew_of_gray(gray)
+    except Exception:
+        return None
+
+
+def _skew_of_gray(gray: Any) -> float | None:
+    """Skew of a grayscale ndarray. None when undetectable. Never raises."""
+    try:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        return None
+    try:
+        _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        coords = np.column_stack(np.where(bw > 0))
+        if coords.shape[0] < 100:
+            return None
+        angle = cv2.minAreaRect(coords)[-1]
+        # minAreaRect reports [-90, 0); fold into [-45, 45) so the magnitude
+        # is the rotation that straightens the text.
+        if angle < -45:
+            angle = -(90 + angle)
+        else:
+            angle = -angle
+        return round(float(angle), 2)
+    except Exception:
+        return None
+
+
+def _deskew_array(gray: Any, max_correct_deg: float = 15.0) -> Any:
+    """Rotate a grayscale ndarray straight. Passthrough on failure/tiny/wild tilt."""
+    try:
+        import cv2  # type: ignore
+    except ImportError:
+        return gray
+    try:
+        angle = _skew_of_gray(gray)
+        if angle is None or abs(angle) < 0.5 or abs(angle) > max_correct_deg:
+            return gray
+        h, w = gray.shape[:2]
+        matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+        return cv2.warpAffine(gray, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    except Exception:
+        return gray
+
+
+def deskew_image_bytes(image_bytes: bytes, max_correct_deg: float = 15.0) -> bytes:
+    """Deskew an encoded image. Returns input unchanged on any failure. Never raises."""
+    try:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        return image_bytes
+    try:
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        gray = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+        if gray is None:
+            return image_bytes
+        fixed = _deskew_array(gray, max_correct_deg)
+        ok, buf = cv2.imencode(".png", fixed)
+        return bytes(buf) if ok else image_bytes
+    except Exception:
+        return image_bytes
+
+
+def _tesseract_cmd() -> None:
+    """Point pytesseract at the Windows default install (mirror of ocr.py). Never raises."""
+    try:
+        import os
+
+        import pytesseract  # type: ignore
+    except Exception:
+        return
+    try:
+        for candidate in (
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ):
+            if os.path.exists(candidate):
+                pytesseract.pytesseract.tesseract_cmd = candidate
+                break
+    except Exception:  # noqa: S110 — default PATH lookup is the fallback
+        pass
+
+
+def detect_rotation_degrees(image_bytes: bytes) -> int:
+    """Clockwise degrees needed to upright the text: one of 0/90/180/270.
+
+    Uses Tesseract OSD on a downscaled copy. Returns 0 whenever unsure
+    (weak text, missing binary, garbage input) — callers treat 0 as "leave
+    it". Threshold (orientation confidence >= 3) was probe-tuned: confident
+    reads score ~7, undecodable text scores ~0. Never raises.
+    """
+    try:
+        import io
+        import re
+
+        import pytesseract  # type: ignore
+        from PIL import Image
+    except Exception:
+        return 0
+    try:
+        _tesseract_cmd()
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        w, h = img.size
+        if max(w, h) > 1000:
+            scale = 1000.0 / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)))  # type: ignore[assignment]
+        osd = pytesseract.image_to_osd(img)
+        m_deg = re.search(r"Rotate:\s*(\d+)", osd)
+        m_conf = re.search(r"Orientation confidence:\s*([\d.]+)", osd)
+        if not m_deg or not m_conf:
+            return 0
+        deg, conf = int(m_deg.group(1)) % 360, float(m_conf.group(1))
+        return deg if deg in (90, 180, 270) and conf >= 3.0 else 0
+    except Exception:
+        return 0
+
+
+def upright_image_bytes(image_bytes: bytes) -> bytes:
+    """Rotate sideways/upside-down captures upright. Passthrough otherwise. Never raises."""
+    try:
+        deg = detect_rotation_degrees(image_bytes)
+        if not deg:
+            return image_bytes
+        import io
+
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_bytes))
+        rotated = img.rotate(-deg, expand=True)  # OSD degrees are clockwise; PIL is CCW
+        buf = io.BytesIO()
+        rotated.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return image_bytes
 
 
 def estimate_ppm(reference_pixel_width: float, reference_mm_width: float) -> float | None:

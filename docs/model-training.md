@@ -34,3 +34,26 @@ is written next to every export for auditability.
 
 Fill the next row when the volume run completes. Do NOT report a blended
 synthetic-heavy number as "the" accuracy.
+
+## Real-label runbook (backs first — they carry the declarations)
+
+Pre-labels are already generated (`data/prelabels_backs.jsonl`, 7 backs) and
+converted to a one-click Label Studio import (`data/labelstudio_import.json`):
+
+```bash
+# 1. Regenerate any time new back photos arrive:
+python ml/data_pipeline/run_ocr_for_labeling.py --indir data/real/backs --out data/prelabels_backs.jsonl
+python ml/data_pipeline/prelabels_to_labelstudio.py --in data/prelabels_backs.jsonl \
+    --out data/labelstudio_import.json --prefix data/real/backs
+# 2. Label Studio: new project with ml/data_pipeline/label_studio_config.xml,
+#    Import data/labelstudio_import.json, fix MRP/NET_QTY/MFG_DATE/EXP_DATE/
+#    MANUFACTURER/CARE spans (aim: 50-100 backs), Export JSON annotations.
+# 3. Convert + retrain (merge is plain concatenation; missing file = no real data):
+python ml/data_pipeline/convert_labelstudio_to_bio.py --in annotations.json --out data/real_train.jsonl
+python ml/train_ner.py --synthetic data/train/labels.jsonl --real data/real_train.jsonl \
+    --out models/lmpc_ner --iterations 10
+```
+
+The merge path is probe-tested (18028 synthetic + sample real rows build one
+training set). The backend picks up `models/lmpc_ner` on restart — no code
+change needed. Log the new row above split by source.

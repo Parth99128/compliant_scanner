@@ -9,8 +9,10 @@
 - `GET /scans` (Bearer; own scans, admin sees all; `?q=&verdict=&status=`) → `ScanSummaryOut[]` (each adds `preview`, `product_name`, `brand_name`, `category`, `has_image`; product auto-filled from extraction, overridable at upload)
 - `PATCH /scans/{id}/product` (owner/admin) `{product_name, brand_name, category}` → `ScanOut`
 - `GET /stats/overview` (Bearer; scoped to role) → `{total, by_verdict, top_failed_rules, by_day, recent}`
-- `GET /scans/{id}` (owner/admin) → `ScanOut` (adds `has_image`, `coord_w/h`: OCR box space; `boxes[]` now persisted)
-- `GET /scans/{id}/image` (owner/admin) → downscaled `image/jpeg` capture for the viewer (404 when absent)
+- `GET /scans/{id}` (owner/admin) → `ScanOut` (adds `has_image`, `coord_w/h`: OCR box space; `boxes[]` now persisted; `frames[]`: every uploaded angle `{index, is_best, measured, url, ocr_confidence, word_count, words_added, boxes[], coord_w/h}`; `measured_index`: angle Rule 7 was measured on — strongest read among calibrated frames)
+- `GET /scans/{id}/image` (owner/admin) → downscaled `image/jpeg` capture for the viewer (best frame; 404 when absent)
+- `GET /scans/{id}/images` (owner/admin) → `FrameOut[]` gallery of all uploaded angles in upload order
+- `GET /scans/{id}/image/{frame_index}` (owner/admin) → `image/jpeg` for one non-best merge angle (404 when absent)
 - `GET /scans/{id}/report` (owner/admin) → `application/pdf` download
 - `POST /scans/{id}/explain` (owner/admin, 10/min) → `ExplainOut {explanation, provider, model}`; optional Gemini, off by default (`LLM_PROVIDER=gemini` + `GEMINI_API_KEY` in `.env`); 409 when disabled, 502 on provider failure
 - `POST /scans/preview` (multipart `file` viewfinder frame + optional `ppm`, `panel_area_cm2`, `is_embossed`; Bearer, 30/min) → `ScanPreviewOut {ocr_engine, ocr_text, ocr_confidence, word_count, font_height_mm, ppm_used, sharpness, fields_found{generic,manufacturer,net_qty,mrp,mfg_date,care}, fields_count, verdict, ready, ready_reason, boxes[], coord_w/h}`; no DB write — live-camera text + size check for auto-capture

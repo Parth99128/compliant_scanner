@@ -58,6 +58,21 @@ class WordBoxOut(BaseModel):
     confidence: float
 
 
+class FrameOut(BaseModel):
+    """One uploaded angle: its own OCR analysis + share of the merged text."""
+
+    index: int = 0  # upload order (0-based)
+    is_best: bool = True  # default view; text union led by this frame
+    measured: bool = True  # Rule 7 sizes were measured on this frame
+    url: str = ""  # relative image URL (best -> /scans/{id}/image)
+    ocr_confidence: float = 0.0  # this frame's own read, 0-100 scale
+    word_count: int = 0  # words this frame read on its own
+    words_added: int = 0  # lines only this frame contributed to the union
+    boxes: list[WordBoxOut] = []  # this frame's own word boxes (overlay)
+    coord_w: int | None = None  # this frame's box coordinate space
+    coord_h: int | None = None
+
+
 class ScanOut(BaseModel):
     id: str
     request_id: str
@@ -80,6 +95,8 @@ class ScanOut(BaseModel):
     brand_name: str = ""
     category: str = ""
     ppm_used: float | None = None
+    frames: list[FrameOut] = []  # every uploaded angle + what it contributed
+    measured_index: int | None = None  # angle Rule 7 sizes were measured on
 
 
 class ScanSummaryOut(BaseModel):

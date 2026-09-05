@@ -10,7 +10,7 @@ import { AlertDestructive } from "@/components/ui/alert";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toaster";
-import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateProduct, type Check } from "@/lib/api";
+import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateProduct, type Check, type FrameInfo, type ScanDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function verdictClasses(v: string): string {
@@ -66,6 +66,228 @@ function reviewedNote(d: { reviewed_by: string | null; reviewed_at: string | nul
   return `${who}${when}`;
 }
 
+function GalleryCard({ scanId, token, d }: { scanId: string; token: string; d: ScanDetail }): React.JSX.Element {
+  const [heatmap, setHeatmap] = React.useState(true);
+  const [selected, setSelected] = React.useState<number | null>(null);
+  const [playing, setPlaying] = React.useState(false);
+  const [imgSize, setImgSize] = React.useState<{ id: string; w: number; h: number } | null>(null);
+
+  const frames: FrameInfo[] = React.useMemo(() => {
+    if (d.frames.length > 0) return d.frames;
+    if (d.has_image) {
+      // Pre-gallery rows: the single stored capture carries the detail boxes.
+      return [
+        {
+          index: 0,
+          is_best: true,
+          measured: true,
+          url: `/scans/${scanId}/image`,
+          ocr_confidence: d.ocr_confidence,
+          word_count: d.boxes.length,
+          words_added: d.boxes.length,
+          boxes: d.boxes,
+          coord_w: d.coord_w,
+          coord_h: d.coord_h,
+        },
+      ];
+    }
+    return [];
+  }, [d, scanId]);
+
+  const gallery = useQuery({
+    queryKey: ["scan-frames", scanId],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        frames.map(async (f) => {
+          const blob = await fetchBlob(f.url || `/scans/${scanId}/image`, token);
+          return [f.index, URL.createObjectURL(blob)] as const;
+        })
+      );
+      return new Map(entries);
+    },
+    enabled: frames.length > 0,
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  React.useEffect(() => {
+    const urls = gallery.data;
+    return () => {
+      urls?.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [gallery.data]);
+
+  const best = frames.find((f) => f.is_best) ?? frames[0];
+  const current = frames.find((f) => f.index === selected) ?? best;
+  const currentUrl = current ? gallery.data?.get(current.index) : undefined;
+
+  React.useEffect(() => {
+    if (!playing || frames.length < 2) return;
+    const t = window.setInterval(() => {
+      setSelected((prev) => {
+        const order = frames.map((f) => f.index);
+        const at = order.indexOf(prev ?? best?.index ?? order[0]);
+        return order[(at + 1) % order.length];
+      });
+    }, 2500);
+    return () => window.clearInterval(t);
+  }, [playing, frames, best]);
+
+  function step(dir: 1 | -1): void {
+    if (!current || frames.length < 2) return;
+    const order = frames.map((f) => f.index);
+    const at = order.indexOf(current.index);
+    setSelected(order[(at + dir + order.length) % order.length]);
+  }
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-6">
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <h2 className="text-sm font-bold">
+          Label capture{frames.length > 1 ? `s (${frames.length} angles)` : ""}
+        </h2>
+        <span className="text-xs text-slate-500">{d.boxes.length} OCR words</span>
+        <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-slate-600">
+          <input type="checkbox" checked={heatmap} onChange={(e) => setHeatmap(e.target.checked)} className="accent-slate-900" />
+          Confidence heatmap
+        </label>
+      </div>
+
+      {frames.length === 0 || !current ? (
+        <div className="grid h-56 place-items-center rounded border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+          No stored capture — this scan predates image storage. New scans include the photo.
+        </div>
+      ) : !currentUrl ? (
+        <div className="grid h-56 place-items-center text-sm text-slate-500">
+          {gallery.isPending ? "Loading captures…" : "Stored captures could not be loaded."}
+        </div>
+      ) : (
+        <>
+          <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-950">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={currentUrl}
+              alt={`Angle ${current.index + 1} of ${frames.length}`}
+              className="mx-auto block max-h-[70vh] w-auto max-w-full object-contain"
+              onLoad={(e) =>
+                setImgSize({ id: `${scanId}:${current.index}`, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+              }
+            />
+                {current.boxes.length > 0 && imgSize && imgSize.id === `${scanId}:${current.index}` && (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                  viewBox={`0 0 ${current.coord_w ?? imgSize.w} ${current.coord_h ?? imgSize.h}`}
+                  preserveAspectRatio="xMidYMid meet"
+                  role="img"
+                  aria-label={`${current.boxes.length} OCR word boxes for angle ${current.index + 1}`}
+                >
+                  {current.boxes.slice(0, 500).map((b, i) => (
+                    <rect
+                      key={i}
+                      x={b.x}
+                      y={b.y}
+                      width={b.w}
+                      height={b.h}
+                      fill="none"
+                      stroke={!heatmap ? "#4ade80" : b.confidence >= 60 ? "#4ade80" : "#f87171"}
+                      strokeWidth={Math.max(imgSize.w, imgSize.h) / 400}
+                    >
+                      <title>{`${b.text} (${Math.round(b.confidence)}%)`}</title>
+                    </rect>
+                  ))}
+                </svg>
+                )}
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={frames.length < 2} onClick={() => step(-1)} aria-label="Previous angle">
+              ‹
+            </Button>
+            <Button variant="outline" size="sm" disabled={frames.length < 2} onClick={() => step(1)} aria-label="Next angle">
+              ›
+            </Button>
+            <span className="text-xs font-semibold text-slate-600">
+              Angle {current.index + 1} of {frames.length}
+              {current.is_best ? " · Best (measured)" : ""}
+            </span>
+            {frames.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setPlaying((v) => !v)}
+                className="ml-auto text-xs font-bold text-slate-700 hover:underline"
+              >
+                {playing ? "❚❚ Pause slideshow" : "▶ Slideshow"}
+              </button>
+            )}
+          </div>
+
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+            {frames.map((f) => {
+              const url = gallery.data?.get(f.index);
+              const active = current.index === f.index;
+              return (
+                <button
+                  key={f.index}
+                  type="button"
+                  onClick={() => {
+                    setSelected(f.index);
+                    setPlaying(false);
+                  }}
+                  className={cn(
+                    "relative w-20 flex-none rounded-md border bg-slate-950",
+                    active ? "border-slate-900 ring-2 ring-slate-900" : "border-slate-200"
+                  )}
+                  aria-label={`Show angle ${f.index + 1}${f.is_best ? " (best)" : ""}`}
+                >
+                  {url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={url} alt="" className="h-16 w-full rounded-md object-cover" loading="lazy" />
+                  ) : (
+                    <span className="grid h-16 w-full place-items-center text-[10px] text-slate-400">…</span>
+                  )}
+                  <span className="absolute left-1 top-1 rounded bg-slate-900/85 px-1 py-px text-[10px] font-bold text-white">
+                    {f.index + 1}
+                  </span>
+                  {f.is_best && (
+                    <span className="absolute right-1 top-1 rounded bg-green-700 px-1 py-px text-[10px] font-bold text-white">
+                      Best
+                    </span>
+                  )}
+                  {f.measured && !f.is_best && (
+                    <span className="absolute bottom-1 right-1 rounded bg-sky-700 px-1 py-px text-[10px] font-bold text-white">
+                      Measured
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mt-1 text-xs tabular-nums text-slate-600">
+            Angle {current.index + 1} read at {Math.round(current.ocr_confidence)}% · {current.word_count} words
+            {current.words_added > 0 && frames.length > 1 ? ` · +${current.words_added} lines found only here` : ""}
+          </p>
+          {frames.length > 1 && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              Final verdict merges all {frames.length} angles; type size is measured on angle{" "}
+              {(d.measured_index ?? best?.index ?? 0) + 1}
+              {best && d.measured_index != null && d.measured_index !== best.index
+                ? ` (text led by angle ${best.index + 1})`
+                : ""}
+              .
+            </p>
+          )}
+        </>
+      )}
+
+      <div className="mt-2 flex gap-4 text-[11px] text-slate-500">
+        <span><i className="mr-1 inline-block h-0 w-4 border-t-2 border-green-400 align-middle" />High confidence (≥60%)</span>
+        <span><i className="mr-1 inline-block h-0 w-4 border-t-2 border-red-400 align-middle" />Low confidence — verify on pack</span>
+      </div>
+    </div>
+  );
+}
+
 export default function ScanDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -74,7 +296,6 @@ export default function ScanDetailPage(): React.JSX.Element {
   const mounted = useMounted();
   const { notifyError } = useToast();
   const queryClient = useQueryClient();
-  const [heatmap, setHeatmap] = React.useState(true);
   const [notes, setNotes] = React.useState("");
   const [actionError, setActionError] = React.useState("");
   const [busy, setBusy] = React.useState<"review" | "pdf" | "explain" | null>(null);
@@ -84,7 +305,6 @@ export default function ScanDetailPage(): React.JSX.Element {
   const [pName, setPName] = React.useState("");
   const [pBrand, setPBrand] = React.useState("");
   const [pCat, setPCat] = React.useState("");
-  const [imgSize, setImgSize] = React.useState<{ id: string; w: number; h: number } | null>(null);
 
   React.useEffect(() => {
     if (ready && !session) router.replace("/login");
@@ -95,25 +315,6 @@ export default function ScanDetailPage(): React.JSX.Element {
     queryFn: () => getScan(id, session?.token ?? ""),
     enabled: ready && !!session,
   });
-
-  const image = useQuery({
-    queryKey: ["scan-image", id],
-    queryFn: async () => {
-      const blob = await fetchBlob(`/scans/${id}/image`, session?.token ?? "");
-      return URL.createObjectURL(blob);
-    },
-    // Always try: pre-image rows 404 into the "no capture" placeholder below.
-    enabled: ready && !!session,
-    staleTime: Infinity,
-    retry: false,
-  });
-
-  React.useEffect(() => {
-    const url = image.data;
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [image.data]);
 
   if (!mounted || !ready || !session) return <p className="text-sm text-slate-500">Loading…</p>;
   if (detail.isPending) return <p className="text-sm text-slate-500">Loading scan…</p>;
@@ -234,63 +435,7 @@ export default function ScanDetailPage(): React.JSX.Element {
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-5">
         <div className="xl:col-span-3">
-          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-6">
-            <div className="mb-2 flex flex-wrap items-center gap-3">
-              <h2 className="text-sm font-bold">Label capture</h2>
-              <span className="text-xs text-slate-500">{d.boxes.length} OCR words</span>
-              <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-slate-600">
-                <input type="checkbox" checked={heatmap} onChange={(e) => setHeatmap(e.target.checked)} className="accent-slate-900" />
-                Confidence heatmap
-              </label>
-            </div>
-            {image.data ? (
-              <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-950">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={image.data}
-                  alt="Scanned label"
-                  className="block w-full"
-                  onLoad={(e) => setImgSize({ id, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-                />
-                {imgSize && imgSize.id === id && (
-                <svg
-                  className="pointer-events-none absolute inset-0 h-full w-full"
-                  viewBox={`0 0 ${d.coord_w ?? imgSize.w} ${d.coord_h ?? imgSize.h}`}
-                  preserveAspectRatio="none"
-                  role="img"
-                  aria-label={`${d.boxes.length} OCR word boxes`}
-                >
-                  {d.boxes.slice(0, 500).map((b, i) => (
-                    <rect
-                      key={i}
-                      x={b.x}
-                      y={b.y}
-                      width={b.w}
-                      height={b.h}
-                      fill="none"
-                      stroke={!heatmap ? "#4ade80" : b.confidence >= 60 ? "#4ade80" : "#f87171"}
-                      strokeWidth={Math.max(imgSize.w, imgSize.h) / 400}
-                    >
-                      <title>{`${b.text} (${Math.round(b.confidence)}%)`}</title>
-                    </rect>
-                  ))}
-                </svg>
-                )}
-              </div>
-            ) : image.isPending ? (
-              <div className="grid h-56 place-items-center text-sm text-slate-500">Loading capture…</div>
-            ) : (
-              <div className="grid h-56 place-items-center rounded border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
-                {image.error instanceof ApiError && image.error.status === 404
-                  ? "No stored capture — this scan predates image storage. New scans include the photo."
-                  : "Stored capture could not be loaded."}
-              </div>
-            )}
-            <div className="mt-2 flex gap-4 text-[11px] text-slate-500">
-              <span><i className="mr-1 inline-block h-0 w-4 border-t-2 border-green-400 align-middle" />High confidence (≥60%)</span>
-              <span><i className="mr-1 inline-block h-0 w-4 border-t-2 border-red-400 align-middle" />Low confidence — verify on pack</span>
-            </div>
-          </div>
+          <GalleryCard scanId={id} token={session.token} d={d} />
         </div>
 
         <div className="flex flex-col gap-4 xl:col-span-2">

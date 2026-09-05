@@ -41,6 +41,26 @@ class ScanRecord(Base):
     boxes_json: Mapped[str] = mapped_column(Text, default="[]")
     ocr_width: Mapped[int] = mapped_column(nullable=True, default=None)
     ocr_height: Mapped[int] = mapped_column(nullable=True, default=None)
+    # Per-frame analysis summary for multi-angle merges:
+    # [{index, is_best, ocr_confidence, word_count, words_added}].
+    # Single captures store one entry. Pre-feature rows use "[]".
+    frames_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class ScanImage(Base):
+    """Extra angle captures of a merge (frame 0/best lives on ScanRecord.image_blob).
+
+    Only non-best merge frames are stored here, in upload order. Single
+    captures and pre-feature merges have no rows — the viewer falls back to
+    the primary image. Created by create_all (new table, no ALTER needed).
+    """
+
+    __tablename__ = "scan_images"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex[:16])
+    scan_id: Mapped[str] = mapped_column(String(32), index=True, default="")
+    frame_index: Mapped[int] = mapped_column(default=0)
+    image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, default=None)
+    image_content_type: Mapped[str] = mapped_column(String(32), default="image/jpeg")
 
 
 class User(Base):
