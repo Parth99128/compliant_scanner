@@ -165,7 +165,14 @@ def estimate_skew_angle(image_bytes: bytes) -> float | None:
 
 
 def _skew_of_gray(gray: Any) -> float | None:
-    """Skew of a grayscale ndarray. None when undetectable. Never raises."""
+    """Skew of a grayscale ndarray. None when undetectable. Never raises.
+
+    Convention-proof decoding of minAreaRect (verified against the pinned
+    opencv 4.10, whose angle range differs from 5.x): the reported angle is
+    re-based using the rect's own aspect, so a flat strip decodes to ~0 on
+    any version. Positive = visually clockwise tilt (matches the warpAffine
+    correction sign used below).
+    """
     try:
         import cv2  # type: ignore
         import numpy as np  # type: ignore
@@ -173,17 +180,19 @@ def _skew_of_gray(gray: Any) -> float | None:
         return None
     try:
         _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        coords = np.column_stack(np.where(bw > 0))
+        # np.where yields (row, col); flip to proper (x, y) or the geometry
+        # transposes and every angle comes out mirrored.
+        coords = np.column_stack(np.where(bw > 0))[:, ::-1]
         if coords.shape[0] < 100:
             return None
-        angle = cv2.minAreaRect(coords)[-1]
-        # minAreaRect reports [-90, 0); fold into [-45, 45) so the magnitude
-        # is the rotation that straightens the text.
-        if angle < -45:
-            angle = -(90 + angle)
+        (w, h), angle = cv2.minAreaRect(coords)[1:3]
+        angle = float(angle)
+        if w < h:
+            skew = angle - 90.0  # short-side-first form (flat strip reports ~90)
         else:
-            angle = -angle
-        return round(float(angle), 2)
+            skew = angle  # long-side-first form (tilt reports ~itself)
+        skew = ((skew + 45.0) % 90.0) - 45.0
+        return round(skew, 2)
     except Exception:
         return None
 
