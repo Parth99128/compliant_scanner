@@ -143,6 +143,8 @@ const ScanDetailSchema = z.object({
   ppm_used: z.number().nullable().default(null),
   frames: z.array(FrameInfoSchema).default([]),
   measured_index: z.number().nullable().default(null),
+  scan_lat: z.number().nullable().default(null),
+  scan_lon: z.number().nullable().default(null),
 });
 export type ScanDetail = z.infer<typeof ScanDetailSchema>;
 
@@ -226,6 +228,8 @@ export interface ScanOptions {
   fontPx?: string;
   panelArea?: string;
   embossed?: boolean;
+  lat?: number | null;
+  lon?: number | null;
 }
 
 const ScanPreviewSchema = z.object({
@@ -280,6 +284,10 @@ export async function uploadScan(files: File[], opts: ScanOptions, token: string
   if (opts.ppm) fd.append("ppm", opts.ppm);
   if (opts.fontPx) fd.append("font_px", opts.fontPx);
   if (opts.panelArea) fd.append("panel_area_cm2", opts.panelArea);
+  if (opts.lat != null && opts.lon != null) {
+    fd.append("scan_lat", String(opts.lat));
+    fd.append("scan_lon", String(opts.lon));
+  }
   fd.append("is_embossed", opts.embossed ? "true" : "false");
   const path = files.length > 1 ? "/scans/merge" : "/scans";
   let res: Response;

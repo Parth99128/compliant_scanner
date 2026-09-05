@@ -66,6 +66,8 @@ export default function ScanPage(): React.JSX.Element {
   const [fontPx, setFontPx] = React.useState("");
   const [panelArea, setPanelArea] = React.useState("");
   const [embossed, setEmbossed] = React.useState(false);
+  const [attachGps, setAttachGps] = React.useState(false);
+  const [gpsNote, setGpsNote] = React.useState("");
   const [error, setError] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [stage, setStage] = React.useState(0);
@@ -198,8 +200,22 @@ export default function ScanPage(): React.JSX.Element {
     setFinished(false);
     setStage(0);
     setBusy(true);
+    // Optional inspection GPS for the legal trail (officer opt-in at submit).
+    let lat: number | null = null;
+    let lon: number | null = null;
+    if (attachGps && typeof navigator !== "undefined" && navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 })
+        );
+        lat = pos.coords.latitude;
+        lon = pos.coords.longitude;
+      } catch {
+        setGpsNote("Location unavailable — continuing without GPS.");
+      }
+    }
     try {
-      const created = await uploadScan(files, { ppm, fontPx, panelArea, embossed }, session.token);
+      const created = await uploadScan(files, { ppm, fontPx, panelArea, embossed, lat, lon }, session.token);
       setFinished(true);
       window.setTimeout(() => router.push(`/scans/${created.id}`), 650);
     } catch (e) {
@@ -422,6 +438,11 @@ export default function ScanPage(): React.JSX.Element {
             <input type="checkbox" checked={embossed} onChange={(e) => setEmbossed(e.target.checked)} className="accent-slate-900" />
             Blown / moulded / embossed (higher minima apply)
           </label>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-[13px] font-medium text-slate-700">
+            <input type="checkbox" checked={attachGps} onChange={(e) => { setAttachGps(e.target.checked); setGpsNote(""); }} className="accent-slate-900" />
+            Attach inspection location (GPS on the report)
+          </label>
+          {gpsNote && <p className="mt-1 text-xs text-amber-800">{gpsNote}</p>}
           {error && <AlertDestructive className="mt-3">{error}</AlertDestructive>}
           <Button disabled={busy || files.length === 0} onClick={submit} className="mt-4">
             {busy ? "Analyzing…" : files.length > 1 ? `Merge ${files.length} angles and scan` : "Run compliance scan"}

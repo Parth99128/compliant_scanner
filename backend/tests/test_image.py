@@ -42,6 +42,30 @@ def test_image_unknown_id_404():
     assert r.status_code == 404
 
 
+def test_gps_round_trip_and_validation():
+    tok = _auth()
+    h = {"Authorization": f"Bearer {tok}"}
+    with open(IMG, "rb") as fh:
+        scan = client.post(
+            "/api/v1/scans",
+            files={"file": ("s.png", fh, "image/png")},
+            data={"scan_lat": "19.0760", "scan_lon": "72.8777"},
+            headers=h,
+        ).json()
+    assert scan["scan_lat"] == 19.076 and scan["scan_lon"] == 72.8777
+    det = client.get(f"/api/v1/scans/{scan['id']}", headers=h).json()
+    assert det["scan_lat"] == 19.076 and det["scan_lon"] == 72.8777
+    # Out-of-range coordinates are stored as nulls, never persisted raw.
+    with open(IMG, "rb") as fh:
+        bad = client.post(
+            "/api/v1/scans",
+            files={"file": ("s.png", fh, "image/png")},
+            data={"scan_lat": "999", "scan_lon": "0"},
+            headers=h,
+        ).json()
+    assert bad["scan_lat"] is None and bad["scan_lon"] is None
+
+
 def test_image_requires_auth():
     r = client.get("/api/v1/scans/anything/image")
     assert r.status_code == 401

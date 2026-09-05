@@ -138,6 +138,11 @@ def _cited(
     source_ref: str = "",
 ) -> CheckResult:
     severity = "info" if status == Status.PASS else "blocking"
+    # Audit rule: the exact captured value must travel with the verdict so a
+    # reviewer can see what the OCR saw (never a bare "present"). Cap length
+    # for UI/PDF rendering.
+    if isinstance(observed, str) and len(observed) > 160:
+        observed = observed[:157] + "..."
     return CheckResult(rule_id, status, message, field, citation, verified, observed, expected, severity)
 
 
@@ -192,6 +197,8 @@ def check_manufacturer(d: ProductDeclaration) -> CheckResult:
         "Rule 6(1)(a)",
         Status.PASS,
         "Manufacturer name+address present",
+        observed=f"{d.manufacturer_name}; {d.manufacturer_address}",
+        expected="manufacturer name + address",
         verified=True,
         source_ref=RULE6_P5,
     )
@@ -216,6 +223,8 @@ def check_generic_name(d: ProductDeclaration) -> CheckResult:
         "Rule 6(1)(b)",
         Status.PASS,
         "Generic name present",
+        observed=d.generic_name,
+        expected="generic/common name",
         verified=True,
         source_ref=RULE6_P5,
     )
@@ -252,6 +261,8 @@ def check_net_quantity(d: ProductDeclaration) -> CheckResult:
         "Rule 6(1)(c)",
         Status.PASS,
         "Net quantity present",
+        observed=f"{d.net_quantity_value:g} {d.net_quantity_unit}",
+        expected="net quantity in standard units",
         verified=True,
         source_ref=RULE6_P5,
     )
@@ -288,6 +299,8 @@ def check_mrp(d: ProductDeclaration) -> CheckResult:
         "Rule 6(1)(e) + Rule 2(m)",
         Status.PASS,
         "MRP with taxes present",
+        observed=f"Rs. {d.mrp} (inclusive of all taxes)",
+        expected="MRP inclusive of all taxes",
         verified=True,
         source_ref=RULE2_MRP,
     )
@@ -318,12 +331,15 @@ def check_dates(d: ProductDeclaration) -> CheckResult:
             verified=True,
             source_ref=RULE6_P5,
         )
+    exp_txt = f", expiry {d.expiry_date}" if d.expiry_date is not None else ", no expiry stated"
     return _cited(
         "LMPC-6.1-dates",
         "dates",
         "Rule 6(1)(d)",
         Status.PASS,
         "Date declarations valid",
+        observed=f"mfg/pack {d.mfg_date}{exp_txt}",
+        expected="month and year of manufacture/pack/import",
         verified=True,
         source_ref=RULE6_P5,
     )
@@ -350,6 +366,8 @@ def check_consumer_care(d: ProductDeclaration) -> CheckResult:
         "Rule 6(1) consumer-care proviso (post-2011 amendment)",
         Status.PASS,
         "Consumer care details present",
+        observed=d.consumer_care,
+        expected="customer-care contact",
     )
 
 
@@ -366,12 +384,15 @@ def check_origin(d: ProductDeclaration) -> CheckResult:
             observed="absent",
             expected="country of origin",
         )
+    origin_txt = d.country_of_origin or "domestic supply (no import claimed)"
     return _cited(
         "LMPC-6.1-origin",
         "country_of_origin",
         "Rule 6(1)(a) importer clause",
         Status.PASS,
         "Origin declaration valid",
+        observed=origin_txt,
+        expected="country of origin if imported",
         verified=True,
         source_ref=RULE6_P5,
     )
@@ -399,17 +420,19 @@ def required_numeral_height(
         base = _to_base_qty(net_value, unit)
         if base is None:
             return None, "unconvertible unit"
+        tag = "embossed pack" if embossed else "ordinary print"
         for limit, normal, emb in TABLE_I:
             if base <= limit:
-                return (emb if embossed else normal), f"Table-I (net {base:g}g/ml)"
-        return TABLE_I[-1][1 if embossed else 0], "Table-I"
+                return (emb if embossed else normal), f"Table-I (net {base:g}g/ml, {tag})"
+        return TABLE_I[-1][1 if embossed else 0], f"Table-I ({tag})"
     if unit is not None and unit.lower() in LENGTH_AREA_NUMBER_UNITS:
         if panel_area_cm2 is None or panel_area_cm2 <= 0:
             return None, "Table-II needs principal display panel area"
+        tag = "embossed pack" if embossed else "ordinary print"
         for limit, normal, emb in TABLE_II:
             if panel_area_cm2 <= limit:
-                return (emb if embossed else normal), f"Table-II (panel {panel_area_cm2:g}cm²)"
-        return TABLE_II[-1][1 if embossed else 0], "Table-II"
+                return (emb if embossed else normal), f"Table-II (panel {panel_area_cm2:g}cm², {tag})"
+        return TABLE_II[-1][1 if embossed else 0], f"Table-II ({tag})"
     return None, "unknown unit class"
 
 
@@ -456,6 +479,7 @@ def check_numeral_height(d: ProductDeclaration) -> CheckResult:
 
 def check_letter_height(d: ProductDeclaration) -> CheckResult:
     required = LETTER_HEIGHT_EMBOSSED_MM if d.is_embossed else LETTER_HEIGHT_MM
+    tag = "embossed pack" if d.is_embossed else "ordinary print"
     if d.min_letter_height_mm is None:
         return _rule7(
             "LMPC-7.3-letter",
@@ -472,12 +496,12 @@ def check_letter_height(d: ProductDeclaration) -> CheckResult:
         "Rule 7(3)",
         Status.PASS if ok else Status.FAIL,
         (
-            f"Letter height {d.min_letter_height_mm}mm >= {required}mm"
+            f"Letter height {d.min_letter_height_mm}mm >= {required}mm ({tag})"
             if ok
-            else f"Letter height {d.min_letter_height_mm}mm < required {required}mm (Rule 7(3))"
+            else f"Letter height {d.min_letter_height_mm}mm < required {required}mm (Rule 7(3), {tag})"
         ),
         observed=f"{d.min_letter_height_mm}mm",
-        expected=f">= {required}mm",
+        expected=f">= {required}mm ({tag})",
     )
 
 

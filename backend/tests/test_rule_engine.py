@@ -176,3 +176,19 @@ def test_not_found_status_and_citation_honesty():
     assert by_imp["LMPC-6.1-origin"].status == "NOT_FOUND"
     assert not by_imp["LMPC-6.1-origin"].citation_verified
     assert rep.verdict == "NON_COMPLIANT"
+
+
+def test_observed_values_travel_with_verdict():
+    """Legal audit: every finding carries the exact captured value (never bare 'present')."""
+    rep = evaluate_compliance(good())
+    for r in rep.results:
+        assert r.observed and r.expected, f"{r.rule_id} missing captured value"
+    by_id = {r.rule_id: r for r in rep.results}
+    assert "Acme Foods" in (by_id["LMPC-6.1-manufacturer"].observed or "")
+    assert "Wheat Biscuits" in (by_id["LMPC-6.1-generic"].observed or "")
+    assert "500" in (by_id["LMPC-6.1-netqty"].observed or "")
+    assert "120" in (by_id["LMPC-6.1-mrp"].observed or "")
+    assert "2025" in (by_id["LMPC-6.1-dates"].observed or "")
+    # Missing declarations still show what was (not) seen.
+    empty = {r.rule_id: r for r in evaluate_compliance(ProductDeclaration()).results}
+    assert empty["LMPC-6.1-mrp"].observed == "absent"

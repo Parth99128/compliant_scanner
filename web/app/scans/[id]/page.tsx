@@ -496,6 +496,12 @@ export default function ScanDetailPage(): React.JSX.Element {
               <dd className="font-semibold">
                 {d.ppm_used != null ? `${d.ppm_used} px/mm` : "—"}
               </dd>
+              <dt className="text-slate-500">Location</dt>
+              <dd className="font-semibold">
+                {d.scan_lat != null && d.scan_lon != null
+                  ? `${d.scan_lat.toFixed(5)}, ${d.scan_lon.toFixed(5)}`
+                  : <span className="font-normal text-slate-400">Not attached</span>}
+              </dd>
             </dl>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
               <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(100, d.ocr_confidence)}%` }} />

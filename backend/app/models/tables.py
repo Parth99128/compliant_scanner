@@ -36,6 +36,10 @@ class ScanRecord(Base):
     # Calibration actually used (explicit PPM or auto-detected card). Null =
     # uncalibrated scan; shown in the UI so officers trust the Rule 7 outcome.
     ppm_used: Mapped[float] = mapped_column(Float, nullable=True, default=None)
+    # GPS captured on the officer's device at upload (nullable: desktop
+    # uploads and denied permissions). Shown on the report for legal trail.
+    scan_lat: Mapped[float] = mapped_column(Float, nullable=True, default=None)
+    scan_lon: Mapped[float] = mapped_column(Float, nullable=True, default=None)
     # OCR word boxes in preprocessed-image pixel space + that space's dims,
     # so the viewer overlay aligns at any display size (SVG viewBox).
     boxes_json: Mapped[str] = mapped_column(Text, default="[]")

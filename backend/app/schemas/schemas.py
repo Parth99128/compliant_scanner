@@ -97,6 +97,8 @@ class ScanOut(BaseModel):
     ppm_used: float | None = None
     frames: list[FrameOut] = []  # every uploaded angle + what it contributed
     measured_index: int | None = None  # angle Rule 7 sizes were measured on
+    scan_lat: float | None = None  # GPS at upload (null when unavailable)
+    scan_lon: float | None = None
 
 
 class ScanSummaryOut(BaseModel):

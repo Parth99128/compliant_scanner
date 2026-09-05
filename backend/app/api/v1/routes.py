@@ -118,6 +118,18 @@ def _frame_url(scan_id: str, index: int, is_best: bool) -> str:
     return f"/scans/{scan_id}/image/{index}"
 
 
+def _valid_gps(lat: float | None, lon: float | None) -> tuple[float | None, float | None]:
+    """Keep device GPS only when both halves are in range; else store nulls."""
+    try:
+        if lat is None or lon is None:
+            return None, None
+        if not (-90.0 <= float(lat) <= 90.0 and -180.0 <= float(lon) <= 180.0):
+            return None, None
+        return round(float(lat), 6), round(float(lon), 6)
+    except (TypeError, ValueError):
+        return None, None
+
+
 def _choose_measured_index(
     confidences: list[float], numeral_mms: list[float | None], best_i: int
 ) -> int:
@@ -137,6 +149,9 @@ def _choose_measured_index(
 def _frame_entry(
     index: int, out: "_PipelineOut", added: int, *, is_best: bool, measured: bool
 ) -> dict:
+    # Keep the full box set (same [:500] cap as the legacy best-frame path):
+    # dense panels hold 300+ words and truncating drops overlays off the
+    # bottom half (ingredients, origin strip) while text still extracts.
     return {
         "index": index,
         "is_best": is_best,
@@ -144,7 +159,7 @@ def _frame_entry(
         "ocr_confidence": out.ocr_confidence,
         "word_count": len(out.boxes),
         "words_added": added,
-        "boxes": [dataclasses.asdict(b) for b in out.boxes[:200]],
+        "boxes": [dataclasses.asdict(b) for b in out.boxes[:500]],
         "coord_w": out.coord_w,
         "coord_h": out.coord_h,
     }
@@ -568,6 +583,8 @@ async def scan_image(
     product_name: str | None = Form(default=None),
     brand_name: str | None = Form(default=None),
     category: str | None = Form(default=None),
+    scan_lat: float | None = Form(default=None),
+    scan_lon: float | None = Form(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -589,6 +606,7 @@ async def scan_image(
     img_blob, img_type = _store_image(raw)
     boxes_json, coord_w, coord_h = _boxes_payload(out)
     pname, bname, cat = _product_fields(out.decl, product_name, brand_name, category)
+    lat, lon = _valid_gps(scan_lat, scan_lon)
     frames = [_frame_entry(0, out, len(out.boxes), is_best=True, measured=True)]
     rec = ScanRecord(
         owner_id=user.id,
@@ -609,6 +627,8 @@ async def scan_image(
         brand_name=bname,
         category=cat,
         ppm_used=out.resolved_ppm,
+        scan_lat=lat,
+        scan_lon=lon,
         frames_json=json.dumps(frames),
     )
     db.add(rec)
@@ -637,6 +657,8 @@ async def scan_image(
         ppm_used=rec.ppm_used,
         frames=_frames_out(rec),
         measured_index=_measured_index_out(rec),
+        scan_lat=rec.scan_lat,
+        scan_lon=rec.scan_lon,
     )
 
 
@@ -673,6 +695,8 @@ async def merge_scans(
     product_name: str | None = Form(default=None),
     brand_name: str | None = Form(default=None),
     category: str | None = Form(default=None),
+    scan_lat: float | None = Form(default=None),
+    scan_lon: float | None = Form(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
@@ -743,6 +767,7 @@ async def merge_scans(
     img_blob, img_type = _store_image(raws[best_i])
     boxes_json, coord_w, coord_h = _boxes_payload(best)
     pname, bname, cat = _product_fields(decl, product_name, brand_name, category)
+    lat, lon = _valid_gps(scan_lat, scan_lon)
     frames = [_frame_entry(i, o, added.get(i, 0), is_best=(i == best_i), measured=(i == m_i)) for i, o in enumerate(outs)]
     rec = ScanRecord(
         owner_id=user.id,
@@ -763,6 +788,8 @@ async def merge_scans(
         brand_name=bname,
         category=cat,
         ppm_used=measure.resolved_ppm,
+        scan_lat=lat,
+        scan_lon=lon,
         frames_json=json.dumps(frames),
     )
     db.add(rec)
@@ -785,7 +812,7 @@ async def merge_scans(
         ocr_engine=engine,
         ocr_text=merged_text[:2000],
         ocr_confidence=best.ocr_confidence,
-        font_height_mm=best.font_mm,
+        font_height_mm=measure.font_mm,
         verdict=report.verdict,
         compliant=report.compliant,
         results=_checks(report),
@@ -800,6 +827,8 @@ async def merge_scans(
         ppm_used=rec.ppm_used,
         frames=_frames_out(rec),
         measured_index=_measured_index_out(rec),
+        scan_lat=rec.scan_lat,
+        scan_lon=rec.scan_lon,
     )
 
 
@@ -970,6 +999,8 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         ppm_used=rec.ppm_used,
         frames=_frames_out(rec),
         measured_index=_measured_index_out(rec),
+        scan_lat=rec.scan_lat,
+        scan_lon=rec.scan_lon,
         boxes=[
             WordBoxOut(
                 text=str(b.get("text", "")),
@@ -1100,7 +1131,8 @@ def scan_report(scan_id: str, db: Session = Depends(get_db), user: User = Depend
     warnings = []
     if rec.overrides_json and rec.overrides_json != "[]":
         warnings.append(f"Officer override by {rec.reviewed_by}: {rec.review_notes}")
-    pdf = build_report_pdf(rec, stored, warnings)
+    boxes, coord_w, coord_h = _stored_boxes(rec)
+    pdf = build_report_pdf(rec, stored, warnings, boxes, coord_w, coord_h)
     return Response(
         content=pdf,
         media_type="application/pdf",

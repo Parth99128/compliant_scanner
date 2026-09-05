@@ -5,7 +5,7 @@ import io
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 
-from app.api.v1.routes import _choose_measured_index
+from app.api.v1.routes import _choose_measured_index, _frame_entry
 from app.main import create_app
 
 client = TestClient(create_app())
@@ -143,3 +143,18 @@ def test_frames_carry_own_boxes_and_measured_flag():
     det = client.get(f"/api/v1/scans/{body['id']}", headers=h).json()
     assert det["measured_index"] == body["measured_index"]
     assert [len(f["boxes"]) for f in det["frames"]] == [len(f["boxes"]) for f in body["frames"]]
+
+
+def test_frame_entry_keeps_dense_panels_whole():
+    """Regression: 300-word dense panels (ingredients + origin strip at the
+    bottom) must keep every box — a low cap silently drops overlays while the
+    text still extracts, looking exactly like 'OCR missed it'."""
+    from types import SimpleNamespace
+
+    from app.services.ocr import WordBox
+
+    boxes = [WordBox(text=f"w{i}", x=i, y=i, w=10, h=8, confidence=90.0) for i in range(300)]
+    out = SimpleNamespace(ocr_confidence=80.0, boxes=boxes, coord_w=900, coord_h=1200)
+    entry = _frame_entry(0, out, 300, is_best=True, measured=True)
+    assert len(entry["boxes"]) == 300
+    assert entry["word_count"] == 300
