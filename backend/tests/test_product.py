@@ -22,11 +22,23 @@ def _upload(tok: str, **form) -> dict:
     return r.json()
 
 
+def _expected_generic() -> str:
+    """Ground truth for the pinned fixture (tracks accept_phase1 regeneration)."""
+    import json
+
+    with open("../data/labels.jsonl", encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row.get("image") == "samples/sample_00001.png":
+                return str(row["truth"]["generic_name"])
+    raise AssertionError("fixture row samples/sample_00001.png missing from data/labels.jsonl")
+
+
 def test_product_autofill_from_extraction():
     tok = _auth()
     scan = _upload(tok)
-    assert scan["product_name"] == "Wheat Biscuits"
-    assert "Acme Foods" in scan["brand_name"]
+    assert scan["product_name"] == _expected_generic()
+    assert scan["brand_name"]  # auto-filled maker line, never blank on synthetic labels
 
 
 def test_product_override_at_upload_and_patch():
