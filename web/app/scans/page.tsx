@@ -16,76 +16,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
+import { ScanThumb } from "@/components/scan-thumb";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listScans, type ScanSummary } from "@/lib/api";
-
-const columns: ColumnDef<ScanSummary>[] = [
-  {
-    accessorKey: "created_at",
-    header: ({ column }) => (
-      <button className="font-bold uppercase" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-        Date {column.getIsSorted() === "asc" ? "▲" : column.getIsSorted() === "desc" ? "▼" : ""}
-      </button>
-    ),
-    cell: ({ row }) => <span className="whitespace-nowrap tabular-nums">{row.original.created_at.slice(0, 16).replace("T", " ")}</span>,
-  },
-  {
-    accessorKey: "product_name",
-    header: "Product",
-    cell: ({ row }) => (
-      <span className="block max-w-56">
-        <span className="block truncate text-[13px] font-bold" title={row.original.product_name || row.original.preview}>
-          {row.original.product_name || row.original.preview || <span className="font-normal text-slate-400">—</span>}
-        </span>
-        {(row.original.brand_name || row.original.category) && (
-          <span className="block truncate text-[11px] text-slate-500">
-            {[row.original.brand_name, row.original.category].filter(Boolean).join(" · ")}
-          </span>
-        )}
-      </span>
-    ),
-    enableSorting: false,
-  },
-  {
-    accessorKey: "verdict",
-    header: ({ column }) => (
-      <button className="font-bold uppercase" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-        Status {column.getIsSorted() === "asc" ? "▲" : column.getIsSorted() === "desc" ? "▼" : ""}
-      </button>
-    ),
-    cell: ({ row }) => <VerdictBadge verdict={row.original.verdict} />,
-    filterFn: "equalsString",
-  },
-  {
-    accessorKey: "status",
-    header: "Review",
-    cell: ({ row }) => (
-      <Badge tone={row.original.status === "final" ? "blue" : "slate"}>
-        {row.original.status === "final" ? "Final" : "Pending"}
-      </Badge>
-    ),
-  },
-  {
-    accessorKey: "ocr_engine",
-    header: ({ column }) => (
-      <button className="font-bold uppercase" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-        Engine {column.getIsSorted() === "asc" ? "▲" : column.getIsSorted() === "desc" ? "▼" : ""}
-      </button>
-    ),
-    cell: ({ row }) => <code className="text-xs">{row.original.ocr_engine}</code>,
-  },
-  {
-    id: "actions",
-    header: "",
-    cell: ({ row }) => (
-      <Link href={`/scans/${row.original.id}`} className="font-semibold text-slate-700 hover:underline">
-        Details
-      </Link>
-    ),
-  },
-];
 
 function HistoryInner(): React.JSX.Element {
   const router = useRouter();
@@ -95,6 +30,84 @@ function HistoryInner(): React.JSX.Element {
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "created_at", desc: true }]);
   const [search, setSearch] = React.useState(params.get("q") ?? "");
   const [verdict, setVerdict] = React.useState("all");
+  const token = session?.token ?? "";
+
+  const columns = React.useMemo<ColumnDef<ScanSummary>[]>(
+    () => [
+      {
+        id: "photo",
+        header: "Photo",
+        cell: ({ row }) => (
+          <ScanThumb id={row.original.id} token={token} hasImage={row.original.has_image} alt={row.original.product_name || row.original.preview || "Label capture"} />
+        ),
+        enableSorting: false,
+      },
+      {
+        accessorKey: "created_at",
+        header: ({ column }) => (
+          <button className="font-bold uppercase" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+            Date {column.getIsSorted() === "asc" ? "▲" : column.getIsSorted() === "desc" ? "▼" : ""}
+          </button>
+        ),
+        cell: ({ row }) => <span className="whitespace-nowrap tabular-nums">{row.original.created_at.slice(0, 16).replace("T", " ")}</span>,
+      },
+      {
+        accessorKey: "product_name",
+        header: "Product",
+        cell: ({ row }) => (
+          <span className="block max-w-56">
+            <span className="block truncate text-[13px] font-bold" title={row.original.product_name || row.original.preview}>
+              {row.original.product_name || row.original.preview || <span className="font-normal text-slate-400">—</span>}
+            </span>
+            {(row.original.brand_name || row.original.category) && (
+              <span className="block truncate text-[11px] text-slate-500">
+                {[row.original.brand_name, row.original.category].filter(Boolean).join(" · ")}
+              </span>
+            )}
+          </span>
+        ),
+        enableSorting: false,
+      },
+      {
+        accessorKey: "verdict",
+        header: ({ column }) => (
+          <button className="font-bold uppercase" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+            Status {column.getIsSorted() === "asc" ? "▲" : column.getIsSorted() === "desc" ? "▼" : ""}
+          </button>
+        ),
+        cell: ({ row }) => <VerdictBadge verdict={row.original.verdict} />,
+        filterFn: "equalsString",
+      },
+      {
+        accessorKey: "status",
+        header: "Review",
+        cell: ({ row }) => (
+          <Badge tone={row.original.status === "final" ? "blue" : "slate"}>
+            {row.original.status === "final" ? "Final" : "Pending"}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "ocr_engine",
+        header: ({ column }) => (
+          <button className="font-bold uppercase" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
+            Engine {column.getIsSorted() === "asc" ? "▲" : column.getIsSorted() === "desc" ? "▼" : ""}
+          </button>
+        ),
+        cell: ({ row }) => <code className="text-xs">{row.original.ocr_engine}</code>,
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <Link href={`/scans/${row.original.id}`} className="font-semibold text-slate-700 hover:underline">
+            Details
+          </Link>
+        ),
+      },
+    ],
+    [token]
+  );
 
   React.useEffect(() => {
     if (ready && !session) router.replace("/login");
@@ -165,7 +178,7 @@ function HistoryInner(): React.JSX.Element {
         <TableBody>
           {table.getRowModel().rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-10 text-center">
+              <TableCell colSpan={7} className="py-10 text-center">
                 <p className="font-bold text-slate-700">No records match</p>
                 <p className="text-xs text-slate-500">Try a different search, or run a scan from the Scan tab.</p>
               </TableCell>

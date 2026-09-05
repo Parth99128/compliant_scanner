@@ -79,6 +79,7 @@ class ScanOut(BaseModel):
     product_name: str = ""
     brand_name: str = ""
     category: str = ""
+    ppm_used: float | None = None
 
 
 class ScanSummaryOut(BaseModel):
@@ -92,6 +93,7 @@ class ScanSummaryOut(BaseModel):
     product_name: str = ""
     brand_name: str = ""
     category: str = ""  # first line of OCR text (label excerpt for lists)
+    has_image: bool = False
 
 
 class ReviewIn(BaseModel):
@@ -119,4 +121,27 @@ class ExplainOut(BaseModel):
     explanation: str
     provider: str = "gemini"
     model: str = ""
+    request_id: str
+
+
+class ScanPreviewOut(BaseModel):
+    """Lightweight live-camera frame analysis. No DB write, no stored scan."""
+
+    ocr_engine: str
+    ocr_text: str = ""
+    ocr_confidence: float = 0.0
+    word_count: int = 0
+    font_height_mm: float | None = None
+    ppm_used: float | None = None
+    sharpness: float | None = None
+    fields_found: dict[str, bool] = {}
+    fields_count: int = 0
+    fields_total: int = 6
+    verdict: str = "INCOMPLETE"
+    compliant: bool = False
+    ready: bool = False
+    ready_reason: str = ""
+    boxes: list[WordBoxOut] = []
+    coord_w: int | None = None
+    coord_h: int | None = None
     request_id: str

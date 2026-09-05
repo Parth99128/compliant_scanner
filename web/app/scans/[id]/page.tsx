@@ -84,7 +84,7 @@ export default function ScanDetailPage(): React.JSX.Element {
   const [pName, setPName] = React.useState("");
   const [pBrand, setPBrand] = React.useState("");
   const [pCat, setPCat] = React.useState("");
-  const [imgSize, setImgSize] = React.useState<{ w: number; h: number } | null>(null);
+  const [imgSize, setImgSize] = React.useState<{ id: string; w: number; h: number } | null>(null);
 
   React.useEffect(() => {
     if (ready && !session) router.replace("/login");
@@ -102,13 +102,16 @@ export default function ScanDetailPage(): React.JSX.Element {
       const blob = await fetchBlob(`/scans/${id}/image`, session?.token ?? "");
       return URL.createObjectURL(blob);
     },
-    enabled: ready && !!session && detail.data?.has_image === true,
+    // Always try: pre-image rows 404 into the "no capture" placeholder below.
+    enabled: ready && !!session,
     staleTime: Infinity,
+    retry: false,
   });
 
   React.useEffect(() => {
+    const url = image.data;
     return () => {
-      if (image.data) URL.revokeObjectURL(image.data);
+      if (url) URL.revokeObjectURL(url);
     };
   }, [image.data]);
 
@@ -240,24 +243,16 @@ export default function ScanDetailPage(): React.JSX.Element {
                 Confidence heatmap
               </label>
             </div>
-            {!d.has_image || image.isError ? (
-              <div className="grid h-56 place-items-center rounded border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
-                {!d.has_image
-                  ? "No stored capture — this scan predates image storage. New scans include the photo."
-                  : "Stored capture could not be loaded."}
-              </div>
-            ) : !image.data || !imgSize ? (
-              <div className="grid h-56 place-items-center text-sm text-slate-500">
-                {image.isPending ? "Loading capture…" : ""}
-                {image.data && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={image.data} alt="" className="hidden" onLoad={(e) => setImgSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
-                )}
-              </div>
-            ) : (
+            {image.data ? (
               <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-950">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image.data} alt="Scanned label" className="block w-full" />
+                <img
+                  src={image.data}
+                  alt="Scanned label"
+                  className="block w-full"
+                  onLoad={(e) => setImgSize({ id, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                />
+                {imgSize && imgSize.id === id && (
                 <svg
                   className="pointer-events-none absolute inset-0 h-full w-full"
                   viewBox={`0 0 ${d.coord_w ?? imgSize.w} ${d.coord_h ?? imgSize.h}`}
@@ -280,6 +275,15 @@ export default function ScanDetailPage(): React.JSX.Element {
                     </rect>
                   ))}
                 </svg>
+                )}
+              </div>
+            ) : image.isPending ? (
+              <div className="grid h-56 place-items-center text-sm text-slate-500">Loading capture…</div>
+            ) : (
+              <div className="grid h-56 place-items-center rounded border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+                {image.error instanceof ApiError && image.error.status === 404
+                  ? "No stored capture — this scan predates image storage. New scans include the photo."
+                  : "Stored capture could not be loaded."}
               </div>
             )}
             <div className="mt-2 flex gap-4 text-[11px] text-slate-500">
@@ -343,6 +347,10 @@ export default function ScanDetailPage(): React.JSX.Element {
               <dd className="font-semibold">{d.ocr_confidence}%</dd>
               <dt className="text-slate-500">Type height</dt>
               <dd className="font-semibold">{d.font_height_mm ?? "—"} {d.font_height_mm != null ? "mm" : ""}</dd>
+              <dt className="text-slate-500">PPM scale</dt>
+              <dd className="font-semibold">
+                {d.ppm_used != null ? `${d.ppm_used} px/mm` : "—"}
+              </dd>
             </dl>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
               <div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.min(100, d.ocr_confidence)}%` }} />

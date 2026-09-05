@@ -31,6 +31,9 @@ def test_image_round_trip():
     assert det["has_image"] is True
     assert len(det["boxes"]) > 0
     assert det["coord_w"] and det["coord_h"]
+    rows = client.get("/api/v1/scans", headers={"Authorization": f"Bearer {tok}"}).json()
+    match = [r for r in rows if r["id"] == scan["id"]]
+    assert len(match) == 1 and match[0]["has_image"] is True
 
 
 def test_image_unknown_id_404():

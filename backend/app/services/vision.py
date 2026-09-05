@@ -113,6 +113,34 @@ def preprocess_for_ocr(image_bytes: bytes) -> bytes:
         return image_bytes
 
 
+def sharpness_score(image_bytes: bytes) -> float | None:
+    """Laplacian variance focus measure. Higher = sharper. None on any failure.
+
+    Typical phone-label frames: <30 very blurry, 30-100 soft, >100 sharp enough
+    for OCR. Used by the live-preview endpoint to gate auto-capture.
+    Never raises.
+    """
+    try:
+        import cv2  # type: ignore
+        import numpy as np  # type: ignore
+    except ImportError:
+        return None
+    try:
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return None
+        # Downscale huge frames: variance scale is size-invariant enough and
+        # this keeps live previews cheap.
+        h, w = img.shape[:2]
+        if max(h, w) > 800:
+            scale = 800.0 / max(h, w)
+            img = cv2.resize(img, (int(w * scale), int(h * scale)))
+        return round(float(cv2.Laplacian(img, cv2.CV_64F).var()), 1)
+    except Exception:
+        return None
+
+
 def estimate_ppm(reference_pixel_width: float, reference_mm_width: float) -> float | None:
     """Pixel-Per-Millimeter ratio from a known reference object (e.g. coin/ruler)."""
     if not reference_pixel_width or not reference_mm_width or reference_mm_width <= 0:

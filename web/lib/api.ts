@@ -17,6 +17,7 @@ const ScanSummarySchema = z.object({
   product_name: z.string().default(""),
   brand_name: z.string().default(""),
   category: z.string().default(""),
+  has_image: z.boolean().default(false),
 });
 export type ScanSummary = z.infer<typeof ScanSummarySchema>;
 const ScanListSchema = z.array(ScanSummarySchema);
@@ -124,6 +125,7 @@ const ScanDetailSchema = z.object({
   product_name: z.string().default(""),
   brand_name: z.string().default(""),
   category: z.string().default(""),
+  ppm_used: z.number().nullable().default(null),
 });
 export type ScanDetail = z.infer<typeof ScanDetailSchema>;
 
@@ -203,6 +205,48 @@ export interface ScanOptions {
   fontPx?: string;
   panelArea?: string;
   embossed?: boolean;
+}
+
+const ScanPreviewSchema = z.object({
+  ocr_engine: z.string(),
+  ocr_text: z.string().default(""),
+  ocr_confidence: z.number().default(0),
+  word_count: z.number().default(0),
+  font_height_mm: z.number().nullable().default(null),
+  ppm_used: z.number().nullable().default(null),
+  sharpness: z.number().nullable().default(null),
+  fields_found: z.record(z.string(), z.boolean()).default({}),
+  fields_count: z.number().default(0),
+  fields_total: z.number().default(6),
+  verdict: z.string().default("INCOMPLETE"),
+  compliant: z.boolean().default(false),
+  ready: z.boolean().default(false),
+  ready_reason: z.string().default(""),
+  boxes: z.array(BoxSchema).default([]),
+  coord_w: z.number().nullable().default(null),
+  coord_h: z.number().nullable().default(null),
+  request_id: z.string(),
+});
+export type ScanPreview = z.infer<typeof ScanPreviewSchema>;
+
+export async function previewScan(frame: Blob, opts: ScanOptions, token: string): Promise<ScanPreview> {
+  const fd = new FormData();
+  fd.append("file", frame, "frame.jpg");
+  if (opts.ppm) fd.append("ppm", opts.ppm);
+  if (opts.panelArea) fd.append("panel_area_cm2", opts.panelArea);
+  fd.append("is_embossed", opts.embossed ? "true" : "false");
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/v1/scans/preview`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+  } catch {
+    throw new ApiError(0, "Live preview failed — is the backend reachable?");
+  }
+  if (!res.ok) throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  return ScanPreviewSchema.parse(await res.json());
 }
 
 export async function uploadScan(files: File[], opts: ScanOptions, token: string): Promise<ScanDetail> {

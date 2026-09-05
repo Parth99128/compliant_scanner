@@ -16,9 +16,12 @@ def ensure_columns() -> None:
     `Base.metadata.create_all` only creates missing TABLES, so nullable
     columns added to ScanRecord need explicit ALTERs on existing databases.
     Safe to run on every startup; failures on one column never block others.
+    Uses BYTEA on PostgreSQL (BLOB is not a pg type) and BLOB on SQLite.
     """
+    dialect = engine.dialect.name
+    blob_type = "BYTEA" if dialect == "postgresql" else "BLOB"
     alters = [
-        "ALTER TABLE scans ADD COLUMN image_blob BLOB",
+        f"ALTER TABLE scans ADD COLUMN image_blob {blob_type}",
         "ALTER TABLE scans ADD COLUMN image_content_type VARCHAR(32) DEFAULT 'image/jpeg'",
         "ALTER TABLE scans ADD COLUMN boxes_json TEXT DEFAULT '[]'",
         "ALTER TABLE scans ADD COLUMN ocr_width INTEGER",
@@ -26,6 +29,7 @@ def ensure_columns() -> None:
         "ALTER TABLE scans ADD COLUMN product_name VARCHAR(160) DEFAULT ''",
         "ALTER TABLE scans ADD COLUMN brand_name VARCHAR(160) DEFAULT ''",
         "ALTER TABLE scans ADD COLUMN category VARCHAR(80) DEFAULT ''",
+        "ALTER TABLE scans ADD COLUMN ppm_used FLOAT",
     ]
     with engine.begin() as conn:
         for ddl in alters:

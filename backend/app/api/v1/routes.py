@@ -22,6 +22,7 @@ from app.schemas.schemas import (
     RegisterIn,
     ReviewIn,
     ScanOut,
+    ScanPreviewOut,
     ScanSummaryOut,
     TokenOut,
     WordBoxOut,
@@ -43,6 +44,7 @@ from app.services.vision import (
     font_height_mm,
     mask_quads,
     preprocess_for_ocr,
+    sharpness_score,
 )
 
 router = APIRouter()
@@ -58,15 +60,18 @@ def _rid() -> str:
 
 
 def _store_image(raw: bytes) -> tuple[bytes | None, str]:
-    """Downscaled JPEG capture for the scan viewer (max 1200px). None on any failure."""
+    """Downscaled JPEG capture for the scan viewer (longest side 1200px). None on failure."""
     try:
         import io
 
         from PIL import Image
 
         img = Image.open(io.BytesIO(raw)).convert("RGB")
-        if img.width > 1200:
-            img = img.resize((1200, int(1200 * img.size[1] / img.size[0])))
+        w, h = img.size
+        longest = max(w, h)
+        if longest > 1200:
+            scale = 1200.0 / longest
+            img = img.resize((int(w * scale), int(h * scale)))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=72)
         return buf.getvalue(), "image/jpeg"
@@ -221,6 +226,85 @@ def validate_declaration(body: DeclarationIn):
     )
 
 
+def _preview_fields(decl: ProductDeclaration) -> dict[str, bool]:
+    """Mandatory live checklist: 6 declarations the auto-shutter waits for."""
+    return {
+        "generic": bool(decl.generic_name),
+        "manufacturer": bool(decl.manufacturer_name and decl.manufacturer_address),
+        "net_qty": bool(decl.net_quantity_value and decl.net_quantity_unit),
+        "mrp": bool(decl.mrp),
+        "mfg_date": bool(decl.mfg_date),
+        "care": bool(decl.consumer_care),
+    }
+
+
+@router.post("/scans/preview", response_model=ScanPreviewOut, tags=["scans"])
+@limiter.limit("30/minute")
+async def scan_preview(
+    request: Request,
+    file: UploadFile = File(...),
+    ppm: float | None = Form(default=None),
+    panel_area_cm2: float | None = Form(default=None),
+    is_embossed: bool = Form(default=False),
+    user: User = Depends(current_user),
+):
+    """Live-camera frame analysis: OCR text + size calc, no DB write.
+
+    The frontend samples a downscaled viewfinder frame every ~2s and polls
+    this endpoint. It returns the extracted-field checklist, measured font
+    height in mm (pixels / PPM), focus sharpness, and a `ready` flag the UI
+    uses to auto-capture a full-resolution frame once all text is detected.
+    """
+    settings = get_settings()
+    if file.content_type not in settings.allowed_content_type_list:
+        raise HTTPException(status_code=415, detail=f"Unsupported type {file.content_type}")
+    raw = await file.read()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail="File too large")
+    try:
+        out = _run_pipeline(raw, ppm, None, None, panel_area_cm2, is_embossed)
+    except Exception as exc:
+        log.error("preview_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="OCR processing failed")
+    fields = _preview_fields(out.decl)
+    found = sum(1 for v in fields.values() if v)
+    sharp = sharpness_score(raw)
+    reasons: list[str] = []
+    if found < 6:
+        missing = sorted(k for k, v in fields.items() if not v)
+        reasons.append(f"missing {', '.join(missing)}")
+    if out.ocr_confidence < 60:
+        reasons.append(f"low confidence {out.ocr_confidence}% (<60%)")
+    if out.font_mm is None:
+        reasons.append("size unmeasured (no card/ppm in frame)")
+    if sharp is not None and sharp < 50:
+        reasons.append(f"blurry (sharpness {sharp})")
+    ready = not reasons
+    return ScanPreviewOut(
+        ocr_engine=out.ocr_engine,
+        ocr_text=out.ocr_text[:1000],
+        ocr_confidence=out.ocr_confidence,
+        word_count=len(out.boxes),
+        font_height_mm=out.font_mm,
+        ppm_used=out.resolved_ppm,
+        sharpness=sharp,
+        fields_found=fields,
+        fields_count=found,
+        fields_total=6,
+        verdict=out.report.verdict,
+        compliant=out.report.compliant,
+        ready=ready,
+        ready_reason="ready to capture" if ready else "; ".join(reasons),
+        boxes=[WordBoxOut(**dataclasses.asdict(b)) for b in out.boxes[:100]],
+        coord_w=out.coord_w,
+        coord_h=out.coord_h,
+        request_id=_rid(),
+    )
+
+
 @dataclasses.dataclass
 class _PipelineOut:
     ocr_text: str
@@ -232,6 +316,7 @@ class _PipelineOut:
     report: ComplianceReport
     coord_w: int | None = None  # preprocessed-image dims = box coordinate space
     coord_h: int | None = None
+    resolved_ppm: float | None = None
 
 
 def _run_pipeline(
@@ -331,6 +416,7 @@ def _run_pipeline(
         report=report,
         coord_w=coord_w,
         coord_h=coord_h,
+        resolved_ppm=resolved_ppm,
     )
 
 
@@ -386,6 +472,7 @@ async def scan_image(
         product_name=pname,
         brand_name=bname,
         category=cat,
+        ppm_used=out.resolved_ppm,
     )
     db.add(rec)
     db.commit()
@@ -410,6 +497,7 @@ async def scan_image(
         product_name=rec.product_name,
         brand_name=rec.brand_name,
         category=rec.category,
+        ppm_used=rec.ppm_used,
     )
 
 
@@ -517,6 +605,7 @@ async def merge_scans(
         product_name=pname,
         brand_name=bname,
         category=cat,
+        ppm_used=best.resolved_ppm,
     )
     db.add(rec)
     db.commit()
@@ -541,6 +630,7 @@ async def merge_scans(
         product_name=rec.product_name,
         brand_name=rec.brand_name,
         category=rec.category,
+        ppm_used=rec.ppm_used,
     )
 
 
@@ -590,6 +680,7 @@ def list_scans(
             product_name=r.product_name or "",
             brand_name=r.brand_name or "",
             category=r.category or "",
+            has_image=r.image_blob is not None,
         )
         for r in query.all()
     ]
@@ -707,6 +798,7 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         product_name=rec.product_name or "",
         brand_name=rec.brand_name or "",
         category=rec.category or "",
+        ppm_used=rec.ppm_used,
         boxes=[
             WordBoxOut(
                 text=str(b.get("text", "")),
