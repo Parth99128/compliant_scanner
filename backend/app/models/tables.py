@@ -29,6 +29,9 @@ class ScanRecord(Base):
     # Downscaled original capture for the scan viewer (nullable: pre-feature rows).
     image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, default=None)
     image_content_type: Mapped[str] = mapped_column(String(32), default="image/jpeg")
+    # Display flag so list queries never touch the blob column (N+1 lazy loads
+    # would make filtering slower, not faster). Backfilled by migration.
+    has_image: Mapped[bool] = mapped_column(Boolean, default=False)
     # Product identity: auto-filled from extraction at scan time, editable by
     # officers afterwards (review/label correction workflow).
     product_name: Mapped[str] = mapped_column(String(160), default="")

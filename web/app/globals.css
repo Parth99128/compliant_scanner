@@ -1,8 +1,33 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Segoe UI", "Noto Sans Devanagari", system-ui, -apple-system, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-display: Georgia, "Noto Serif Devanagari", "Times New Roman", serif;
+  --font-mono: Consolas, "Noto Sans Mono", monospace;
+}
+
+@theme {
+  --color-navy-950: #071c33;
+  --color-navy-900: #0b2a4a;
+  --color-navy-800: #103a63;
+  --color-navy-700: #155084;
+  --color-navy-100: #dce7f3;
+  --color-navy-50: #f0f5fa;
+  --color-saffron-700: #c25e04;
+  --color-saffron-600: #e8770f;
+  --color-saffron-500: #f68b1f;
+  --color-saffron-100: #fdebd3;
+  --color-igreen-800: #0b5523;
+  --color-igreen-700: #0e6b2e;
+  --color-igreen-100: #dff0e3;
+  --color-paper: #f7f6f2;
+  --color-gold: #c9a227;
+}
+
+/* Government masthead: saffron / white / green rule. */
+.tricolor-bar {
+  background: linear-gradient(to bottom, #ff9933 0 33%, #f8f8f8 33% 66%, #138808 66% 100%);
 }
 
 /* Subtle functional motion: page enter, thumbnail pop, stage spinner. */
@@ -37,8 +62,64 @@
   content: "";
   animation: blink 1.2s ease-in-out infinite;
 }
+
+/* Landing motion: scroll reveal, hero scan sweep, gentle float. */
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+.reveal {
+  opacity: 0;
+}
+.reveal.is-visible {
+  animation: reveal-up 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+@keyframes sweep {
+  0% { top: 4%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 94%; opacity: 0; }
+}
+.scanline {
+  animation: sweep 3.2s ease-in-out infinite;
+}
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-floaty {
+  animation: floaty 5s ease-in-out infinite;
+}
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker 28s linear infinite;
+}
+
+/* Accessible focus everywhere (keyboard officers matter too). */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 3px solid #f68b1f;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-rise, .animate-pop, .spinner, .dots::after { animation: none; }
+  .animate-rise,
+  .animate-pop,
+  .spinner,
+  .dots::after,
+  .reveal,
+  .reveal.is-visible,
+  .scanline,
+  .animate-floaty,
+  .animate-ticker {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+  }
 }
 
 /* Touch-first: 44px targets, roomier type on coarse pointers (phone browsers). */

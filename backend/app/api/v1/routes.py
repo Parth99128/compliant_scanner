@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, request_id_ctx
@@ -698,6 +698,7 @@ async def _process_single_scan(
         results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
         warnings_json=json.dumps(report.warnings),
         image_blob=img_blob,
+        has_image=img_blob is not None,
         image_content_type=img_type,
         boxes_json=boxes_json,
         ocr_width=coord_w,
@@ -906,6 +907,7 @@ async def _process_merge_scan(
         results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
         warnings_json=json.dumps(warnings),
         image_blob=img_blob,
+        has_image=img_blob is not None,
         image_content_type=img_type,
         boxes_json=boxes_json,
         ocr_width=coord_w,
@@ -1046,7 +1048,13 @@ def list_scans(
     status: str | None = None,
 ):
     """Scan repository: server-side search (id/product/brand/OCR text) + verdict/status filters."""
-    query = db.query(ScanRecord)
+    # Blob columns are deferred: list rows never need image/boxes payloads and
+    # loading hundreds of them per click is what made filtering feel frozen.
+    query = db.query(ScanRecord).options(
+        defer(ScanRecord.image_blob),
+        defer(ScanRecord.boxes_json),
+        defer(ScanRecord.results_json),
+    )
     if user.role != "admin":
         query = query.filter(ScanRecord.owner_id == user.id)
     if verdict in ("COMPLIANT", "NON_COMPLIANT", "INCOMPLETE"):
@@ -1074,7 +1082,7 @@ def list_scans(
             product_name=r.product_name or "",
             brand_name=r.brand_name or "",
             category=r.category or "",
-            has_image=r.image_blob is not None,
+            has_image=bool(r.has_image),
         )
         for r in query.all()
     ]
@@ -1127,7 +1135,14 @@ def stats_overview(db: Session = Depends(get_db), user: User = Depends(current_u
     query = db.query(ScanRecord)
     if user.role != "admin":
         query = query.filter(ScanRecord.owner_id == user.id)
-    rows = query.order_by(ScanRecord.created_at.desc()).limit(500).all()
+    # Blobs/boxes never used here: skipping them turns a ~150MB full-table
+    # drag into kilobytes.
+    rows = (
+        query.options(defer(ScanRecord.image_blob), defer(ScanRecord.boxes_json))
+        .order_by(ScanRecord.created_at.desc())
+        .limit(500)
+        .all()
+    )
     by_verdict: Counter[str] = Counter()
     failed_rules: Counter[str] = Counter()
     by_day: Counter[str] = Counter()

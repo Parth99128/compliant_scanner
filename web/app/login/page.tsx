@@ -63,15 +63,27 @@ export default function LoginPage(): React.JSX.Element {
   }
 
   return (
-    <div className="mx-auto grid max-w-3xl grid-cols-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm md:grid-cols-2">
-      <div className="bg-slate-900 p-8 text-slate-300">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-          Legal Metrology · Packaged Commodities
-        </p>
-        <h1 className="mt-2 text-2xl font-bold text-white">Label Compliance Scanner</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          CPU-only inspection for the Packaged Commodities Rules, 2011.
-        </p>
+    <div className="animate-rise mx-auto grid max-w-3xl grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg md:grid-cols-2">
+      <div className="relative bg-navy-950 p-8 text-slate-300">
+        <div className="tricolor-bar absolute inset-x-0 top-0 h-1.5" aria-hidden="true" />
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/drishti-logo.jpg"
+            alt="DrishtiLM logo"
+            className="h-14 w-14 rounded-xl object-cover object-[50%_30%] shadow-[0_0_20px_rgba(56,189,248,0.4)] ring-1 ring-white/20"
+          />
+          <div>
+            <p className="font-display text-xl font-black leading-none text-white">
+              Drishti<span className="bg-gradient-to-r from-sky-400 to-green-400 bg-clip-text text-transparent">LM</span>
+            </p>
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-gold">
+              Legal Metrology · Packaged Commodities
+            </p>
+          </div>
+        </div>
+        <h1 className="mt-2 font-display text-2xl font-black text-white">Label Compliance Scanner</h1>
+        <p className="mt-1 text-[13px] font-semibold text-slate-400">सही माप, हर पैकेट · CPU-only inspection for the 2011 Rules.</p>
         <ul className="mt-6 space-y-2 border-t border-white/10 pt-4 text-[13px]">
           {[
             "OCR + calibration runs on-device",
@@ -80,13 +92,13 @@ export default function LoginPage(): React.JSX.Element {
             "Reports unlock after officer review",
           ].map((t) => (
             <li key={t} className="flex gap-2">
-              <span className="font-bold text-emerald-400">✓</span> {t}
+              <span className="font-bold text-green-400">✓</span> {t}
             </li>
           ))}
         </ul>
       </div>
       <form onSubmit={onSubmit} noValidate className="p-8">
-        <h2 className="text-lg font-bold">{mode === "login" ? "Officer sign in" : "Create officer account"}</h2>
+        <h2 className="font-display text-lg font-black text-navy-950">{mode === "login" ? "Officer sign in" : "Create officer account"}</h2>
         <p className="mb-4 text-[13px] text-slate-500">SIH26034 · JWT-secured, rate-limited API</p>
         <div className="mb-5 flex overflow-hidden rounded-md border border-slate-300 text-sm font-semibold">
           {(["login", "register"] as const).map((m) => (
@@ -94,7 +106,7 @@ export default function LoginPage(): React.JSX.Element {
               key={m}
               type="button"
               onClick={() => { setMode(m); setError(""); }}
-              className={cn("flex-1 py-2", mode === m ? "bg-slate-900 text-white" : "bg-slate-50 text-slate-500")}
+              className={cn("flex-1 py-2", mode === m ? "bg-navy-900 text-white" : "bg-slate-50 text-slate-500")}
             >
               {m === "login" ? "Sign in" : "Register"}
             </button>

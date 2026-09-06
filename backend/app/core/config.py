@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
-    app_name: str = "LMPC Compliance Scanner"
+    app_name: str = "DrishtiLM — LMPC Compliance Scanner"
     api_v1_prefix: str = "/api/v1"
     environment: str = "local"
 

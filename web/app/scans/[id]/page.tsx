@@ -412,7 +412,7 @@ export default function ScanDetailPage(): React.JSX.Element {
         <Link href="/scans" className="hover:underline">Scan history</Link> / <code>{d.id}</code>
       </p>
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        <h1 className="text-xl font-bold">Scan detail</h1>
+        <h1 className="font-display text-xl font-black text-navy-950">Scan detail</h1>
         <VerdictBadge verdict={d.verdict} />
         <Badge tone={d.status === "final" ? "blue" : "slate"}>{d.status === "final" ? "Final" : "Pending review"}</Badge>
       </div>

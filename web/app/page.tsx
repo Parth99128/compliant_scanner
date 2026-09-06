@@ -2,7 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 import {
   Bar,
@@ -18,6 +17,9 @@ import {
 } from "recharts";
 
 import { useAuth, useMounted } from "@/components/auth-context";
+import { LandingPage } from "@/components/landing";
+import { CountUp } from "@/components/motion";
+import { NewScanButton, PageHeader } from "@/components/page-header";
 import { VerdictBadge } from "@/components/ui/badge";
 import { statsOverview } from "@/lib/api";
 
@@ -32,13 +34,8 @@ function Skeleton({ className }: { className?: string }): React.JSX.Element {
 }
 
 export default function DashboardPage(): React.JSX.Element {
-  const router = useRouter();
   const { session, ready } = useAuth();
   const mounted = useMounted();
-
-  React.useEffect(() => {
-    if (ready && !session) router.replace("/login");
-  }, [ready, session, router]);
 
   const stats = useQuery({
     queryKey: ["stats"],
@@ -46,7 +43,7 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: ready && !!session,
   });
 
-  if (!mounted || !ready || !session)
+  if (!mounted || !ready)
     return (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
@@ -54,6 +51,8 @@ export default function DashboardPage(): React.JSX.Element {
         ))}
       </div>
     );
+
+  if (!session) return <LandingPage />;
 
   const d = stats.data;
   const dist = d
@@ -68,18 +67,11 @@ export default function DashboardPage(): React.JSX.Element {
 
   return (
     <div className="animate-rise">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-xs text-slate-500">Inspect / Overview</p>
-          <h1 className="text-2xl font-extrabold tracking-tight">Compliance overview</h1>
-        </div>
-        <Link
-          href="/scan"
-          className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-700"
-        >
-          + New scan
-        </Link>
-      </div>
+      <PageHeader
+        title="Compliance overview"
+        description="Inspection results across your scans. Select a card to open the matching records."
+        actions={<NewScanButton />}
+      />
 
       {stats.isError && (
         <p className="mt-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
@@ -89,17 +81,22 @@ export default function DashboardPage(): React.JSX.Element {
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { k: "Inspections", v: d?.total ?? 0, tone: "border-t-slate-400", tv: "text-slate-900" },
-          { k: "Compliant", v: d?.by_verdict["COMPLIANT"] ?? 0, tone: "border-t-green-700", tv: "text-green-800" },
-          { k: "Violations", v: d?.by_verdict["NON_COMPLIANT"] ?? 0, tone: "border-t-red-700", tv: "text-red-800" },
-          { k: "Needs measurement", v: d?.by_verdict["INCOMPLETE"] ?? 0, tone: "border-t-amber-500", tv: "text-amber-800" },
+          { k: "Inspections", v: d?.total ?? 0, href: "/scans", tone: "border-t-navy-800", tv: "text-navy-950" },
+          { k: "Compliant", v: d?.by_verdict["COMPLIANT"] ?? 0, href: "/scans?verdict=COMPLIANT", tone: "border-t-igreen-700", tv: "text-green-800" },
+          { k: "Violations", v: d?.by_verdict["NON_COMPLIANT"] ?? 0, href: "/scans?verdict=NON_COMPLIANT", tone: "border-t-red-700", tv: "text-red-800" },
+          { k: "Needs measurement", v: d?.by_verdict["INCOMPLETE"] ?? 0, href: "/scans?verdict=INCOMPLETE", tone: "border-t-saffron-500", tv: "text-amber-800" },
         ].map((s) => (
-          <div key={s.k} className={`rounded-lg border border-slate-200 border-t-4 bg-white p-4 shadow-sm ${s.tone}`}>
+          <Link
+            key={s.k}
+            href={s.href}
+            className={`rounded-lg border border-slate-200 border-t-4 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none ${s.tone}`}
+          >
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{s.k}</p>
-            <p className={`mt-1 text-3xl font-extrabold tabular-nums ${s.tv}`}>
-              {stats.isPending ? "–" : s.v}
+            <p className={`mt-1 font-display text-3xl font-black tabular-nums ${s.tv}`}>
+              {stats.isPending ? "–" : <CountUp to={s.v} />}
             </p>
-          </div>
+            <p className="mt-1 text-[11px] font-semibold text-slate-400">View records →</p>
+          </Link>
         ))}
       </div>
 

@@ -5,6 +5,7 @@ import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
 import { LiveScanner } from "@/components/live-scanner";
+import { PageHeader } from "@/components/page-header";
 import { AlertDestructive, AlertInfo } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toaster";
@@ -23,7 +24,7 @@ function StageRail({ active, done }: { active: number; done: boolean }): React.J
     <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4" aria-live="polite">
       <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
         <div
-          className="h-full rounded-full bg-slate-900 transition-all duration-700 ease-out"
+          className="h-full rounded-full bg-saffron-500 transition-all duration-700 ease-out"
           style={{ width: done ? "100%" : `${8 + (active / STAGES.length) * 84}%` }}
         />
       </div>
@@ -36,7 +37,7 @@ function StageRail({ active, done }: { active: number; done: boolean }): React.J
                 className={cn(
                   "grid h-5 w-5 flex-none place-items-center rounded-full text-[11px] font-bold",
                   state === "done" && "bg-green-700 text-white",
-                  state === "active" && "bg-slate-900 text-white",
+                  state === "active" && "bg-navy-900 text-white",
                   state === "todo" && "bg-slate-200 text-slate-500"
                 )}
               >
@@ -228,8 +229,10 @@ export default function ScanPage(): React.JSX.Element {
 
   return (
     <div className="animate-rise">
-      <p className="text-xs text-slate-500">Inspect / New scan</p>
-      <h1 className="text-xl font-bold">New label scan</h1>
+      <PageHeader
+        title="New label scan"
+        description="One close-up of the declaration panel — or several angles merged into a single verdict."
+      />
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-baseline justify-between gap-2">
@@ -239,27 +242,27 @@ export default function ScanPage(): React.JSX.Element {
             </span>
           </div>
           <p className="mb-3 text-xs text-slate-500">
-            One close-up of the declaration panel — or several angles to merge into a single verdict.
+            {files.length > 1 ? "Angles merge into one verdict, best frame measured." : "Add angles to merge, or scan a single photo."}
           </p>
-          <div className="mb-3 grid grid-cols-3 gap-1 rounded-md bg-slate-100 p-1 text-sm font-bold" role="tablist" aria-label="Photo source">
+          <div className="mb-3 grid grid-cols-3 gap-1 rounded-md bg-navy-50 border border-navy-100 p-1 text-sm font-bold" role="tablist" aria-label="Photo source">
             <button
               type="button" role="tab" aria-selected={source === "camera"}
               onClick={() => { stopCamera(); setSource("camera"); }}
-              className={cn("rounded py-2", source === "camera" ? "bg-slate-900 text-white shadow" : "text-slate-500")}
+              className={cn("rounded py-2", source === "camera" ? "bg-navy-900 text-white shadow" : "text-slate-500")}
             >
               Camera
             </button>
             <button
               type="button" role="tab" aria-selected={source === "live"}
               onClick={() => { stopCamera(); setSource("live"); }}
-              className={cn("rounded py-2", source === "live" ? "bg-slate-900 text-white shadow" : "text-slate-500")}
+              className={cn("rounded py-2", source === "live" ? "bg-navy-900 text-white shadow" : "text-slate-500")}
             >
               Live auto
             </button>
             <button
               type="button" role="tab" aria-selected={source === "upload"}
               onClick={() => { stopCamera(); setSource("upload"); }}
-              className={cn("rounded py-2", source === "upload" ? "bg-slate-900 text-white shadow" : "text-slate-500")}
+              className={cn("rounded py-2", source === "upload" ? "bg-navy-900 text-white shadow" : "text-slate-500")}
             >
               Upload
             </button>
@@ -338,7 +341,7 @@ export default function ScanPage(): React.JSX.Element {
             )}
           >
             <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
-              <div className={cn("grid h-12 w-12 place-items-center rounded-full transition-colors", dragOver ? "bg-slate-900 text-white" : "bg-white text-slate-600 shadow-sm border border-slate-200")}>
+              <div className={cn("grid h-12 w-12 place-items-center rounded-full transition-colors", dragOver ? "bg-navy-900 text-white" : "bg-white text-slate-600 shadow-sm border border-slate-200")}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="17 8 12 3 7 8" />

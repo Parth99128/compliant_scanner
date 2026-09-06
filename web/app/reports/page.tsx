@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
+import { NewScanButton, PageHeader } from "@/components/page-header";
 import { AlertDestructive } from "@/components/ui/alert";
 import { VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,11 +58,11 @@ export default function ReportsPage(): React.JSX.Element {
 
   return (
     <div>
-      <p className="text-xs text-slate-500">Inspect / Reports</p>
-      <h1 className="text-xl font-bold">Reports</h1>
-      <p className="mb-3 text-xs text-slate-500">
-        Only finalized scans appear here — reports unlock after officer review.
-      </p>
+      <PageHeader
+        title="Reports"
+        description="Only finalized scans appear here — reports unlock after officer review."
+        actions={<NewScanButton />}
+      />
       {error && <AlertDestructive className="mb-3">{error}</AlertDestructive>}
       {scans.isError && (
         <AlertDestructive className="mb-3">Could not load scans. Check that the backend is running.</AlertDestructive>

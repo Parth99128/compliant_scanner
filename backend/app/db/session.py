@@ -1,13 +1,38 @@
-from sqlalchemy import create_engine, text
+from typing import Any
+
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import get_settings
 
 settings = get_settings()
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+connect_args: dict[str, Any] = (
+    {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+)
+if settings.database_url.startswith("sqlite"):
+    # Wait (don't instantly fail) when an OCR write holds the lock.
+    connect_args["timeout"] = 30
 engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _connection_record) -> None:
+    """WAL mode: thumbnail/history reads never block OCR writes (and vice versa).
+
+    Single-process app (one uvicorn worker + threads): WAL is strictly safer
+    than the default rollback journal under this exact concurrency shape.
+    Best-effort — a failure must never break startup.
+    """
+    try:
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+    except Exception:  # noqa: S110 — pragmas are optional tuning, not correctness
+        pass
 
 
 def ensure_columns() -> None:
@@ -34,6 +59,7 @@ def ensure_columns() -> None:
         "ALTER TABLE scans ADD COLUMN scan_lat FLOAT",
         "ALTER TABLE scans ADD COLUMN scan_lon FLOAT",
         "ALTER TABLE scans ADD COLUMN warnings_json TEXT DEFAULT '[]'",
+        "ALTER TABLE scans ADD COLUMN has_image BOOLEAN DEFAULT 0",
     ]
     with engine.begin() as conn:
         for ddl in alters:
@@ -41,6 +67,11 @@ def ensure_columns() -> None:
                 conn.execute(text(ddl))
             except Exception:  # noqa: S110 — column already exists; that is the expected path
                 pass
+        try:
+            # One-time backfill for pre-flag rows; harmless to repeat.
+            conn.execute(text("UPDATE scans SET has_image = (image_blob IS NOT NULL)"))
+        except Exception:  # noqa: S110 — keeps booting on exotic backends
+            pass
 
 
 def get_db():
