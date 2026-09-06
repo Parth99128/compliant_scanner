@@ -81,17 +81,20 @@ export default function DashboardPage(): React.JSX.Element {
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { k: "Inspections", v: d?.total ?? 0, href: "/scans", tone: "border-t-navy-800", tv: "text-navy-950" },
-          { k: "Compliant", v: d?.by_verdict["COMPLIANT"] ?? 0, href: "/scans?verdict=COMPLIANT", tone: "border-t-igreen-700", tv: "text-green-800" },
-          { k: "Violations", v: d?.by_verdict["NON_COMPLIANT"] ?? 0, href: "/scans?verdict=NON_COMPLIANT", tone: "border-t-red-700", tv: "text-red-800" },
-          { k: "Needs measurement", v: d?.by_verdict["INCOMPLETE"] ?? 0, href: "/scans?verdict=INCOMPLETE", tone: "border-t-saffron-500", tv: "text-amber-800" },
+          { k: "Inspections", v: d?.total ?? 0, href: "/scans", dot: "bg-navy-800", tv: "text-navy-950" },
+          { k: "Compliant", v: d?.by_verdict["COMPLIANT"] ?? 0, href: "/scans?verdict=COMPLIANT", dot: "bg-igreen-700", tv: "text-green-800" },
+          { k: "Violations", v: d?.by_verdict["NON_COMPLIANT"] ?? 0, href: "/scans?verdict=NON_COMPLIANT", dot: "bg-red-700", tv: "text-red-800" },
+          { k: "Needs measurement", v: d?.by_verdict["INCOMPLETE"] ?? 0, href: "/scans?verdict=INCOMPLETE", dot: "bg-saffron-500", tv: "text-amber-800" },
         ].map((s) => (
           <Link
             key={s.k}
             href={s.href}
-            className={`rounded-lg border border-slate-200 border-t-4 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none ${s.tone}`}
+            className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none"
           >
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{s.k}</p>
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+              <span className={`inline-block h-2 w-2 rounded-sm ${s.dot}`} aria-hidden="true" />
+              {s.k}
+            </p>
             <p className={`mt-1 font-display text-3xl font-black tabular-nums ${s.tv}`}>
               {stats.isPending ? "–" : <CountUp to={s.v} />}
             </p>

@@ -36,6 +36,12 @@ function HistoryInner(): React.JSX.Element {
   });
   const verdictParam = params.get("verdict");
   const queryParam = params.get("q") ?? "";
+  const statusParam = params.get("status");
+  const validStatus = (v: string | null): "all" | "pending_review" | "final" =>
+    v === "pending_review" || v === "final" ? v : "all";
+  const [status, setStatus] = React.useState<"all" | "pending_review" | "final">(() =>
+    validStatus(statusParam)
+  );
 
   // Dashboard cards link here with ?verdict=… — same-page navigation does not
   // remount, so adopt the URL params when they change.
@@ -46,7 +52,8 @@ function HistoryInner(): React.JSX.Element {
         : "all"
     );
     setSearch(queryParam);
-  }, [verdictParam, queryParam]);
+    setStatus(validStatus(statusParam));
+  }, [verdictParam, queryParam, statusParam]);
   const token = session?.token ?? "";
 
   // Debounced query text: without this every keystroke fires a full-table
@@ -62,8 +69,8 @@ function HistoryInner(): React.JSX.Element {
   }, [ready, session, router]);
 
   const scans = useQuery({
-    queryKey: ["scans", debouncedQ, verdict],
-    queryFn: () => listScans(session?.token ?? "", { q: debouncedQ || undefined, verdict }),
+    queryKey: ["scans", debouncedQ, verdict, status],
+    queryFn: () => listScans(session?.token ?? "", { q: debouncedQ || undefined, verdict, status }),
     enabled: ready && !!session,
   });
 
@@ -124,6 +131,22 @@ function HistoryInner(): React.JSX.Element {
             }`}
           >
             {v === "all" ? "All" : v.charAt(0) + v.slice(1).toLowerCase().replace("_", "-")}
+          </button>
+        ))}
+        <span className="hidden h-5 w-px bg-slate-300 sm:block" aria-hidden="true" />
+        {(["all", "pending_review", "final"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => {
+              setStatus(s);
+              setPage(0);
+            }}
+            aria-pressed={status === s}
+            className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
+              status === s ? "border-saffron-600 bg-saffron-500 text-navy-950" : "border-slate-300 bg-white text-slate-600"
+            }`}
+          >
+            {s === "all" ? "Any review" : s === "final" ? "Final" : "Pending review"}
           </button>
         ))}
         <span className="ml-auto text-xs text-slate-500" aria-live="polite">

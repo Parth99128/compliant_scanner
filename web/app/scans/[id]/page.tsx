@@ -26,14 +26,14 @@ function verdictTitle(v: string): string {
 }
 
 function RuleCard({ check }: { check: Check }): React.JSX.Element {
-  const bar =
+  const tone =
     check.status === "PASS"
-      ? "border-l-green-700"
+      ? "border-green-300 bg-green-50/50"
       : check.status === "NOT_ASSESSABLE"
-        ? "border-l-amber-500 bg-amber-50/50"
-        : "border-l-red-700";
+        ? "border-amber-300 bg-amber-50/60"
+        : "border-red-300 bg-red-50/50";
   return (
-    <div className={cn("rounded-md border border-slate-200 border-l-4 bg-white p-3", bar)}>
+    <div className={cn("rounded-md border bg-white p-3", tone)}>
       <div className="flex flex-wrap items-center gap-1.5">
         <code className="text-xs font-bold">{check.rule_id}</code>
         {check.status === "PASS" ? (

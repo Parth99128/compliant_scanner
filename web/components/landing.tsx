@@ -223,8 +223,11 @@ export function LandingPage(): React.JSX.Element {
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f, i) => (
               <Reveal key={f.title} delay={(i % 3) * 90}>
-                <div className="h-full rounded-xl border-l-4 border-l-navy-800 border border-slate-200 bg-paper p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
-                  <h3 className="text-[15px] font-bold text-navy-950">✓ {f.title}</h3>
+                <div className="h-full rounded-xl border border-slate-200 bg-paper p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
+                  <h3 className="flex items-center gap-2 text-[15px] font-bold text-navy-950">
+                    <span className="grid h-5 w-5 flex-none place-items-center rounded-md bg-navy-900 text-[11px] text-white">✓</span>
+                    {f.title}
+                  </h3>
                   <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">{f.body}</p>
                 </div>
               </Reveal>
