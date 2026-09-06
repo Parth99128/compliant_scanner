@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+  process.env.NEXT_PUBLIC_API_URL ?? "";
+
+// Human-readable backend address for error messages ("" = same-origin proxy).
+const API_DESC = API_BASE || "this site (proxied to the backend)";
 
 const TokenSchema = z.object({ access_token: z.string(), token_type: z.string().default("bearer") });
 export type Token = z.infer<typeof TokenSchema>;
@@ -34,7 +37,7 @@ function friendlyError(status: number, raw: string): string {
   // Never flash raw JSON (e.g. {"detail":"Invalid token"}) at officers:
   // sessions simply expire after an hour of scanning.
   if (status === 401) return "Session expired — please sign in again.";
-  if (status === 0) return "Cannot reach the API server. Is the backend running?";
+  if (status === 0) return `Cannot reach the API server at ${API_DESC}. Is the backend running?`;
   try {
     const parsed = JSON.parse(raw) as { detail?: unknown };
     if (typeof parsed.detail === "string" && parsed.detail) return parsed.detail.slice(0, 300);
@@ -182,7 +185,7 @@ export async function fetchBlob(path: string, token: string): Promise<Blob> {
   try {
     res = await fetch(`${API_BASE}/api/v1${path}`, { headers: { Authorization: `Bearer ${token}` } });
   } catch {
-    throw new ApiError(0, "Cannot reach the API server. Is the backend running?");
+    throw new ApiError(0, `Cannot reach the API server at ${API_DESC}. Is the backend running?`);
   }
   if (res.status === 409) throw new ApiError(409, "Report is not final — confirm the review first, then download.");
   if (res.status === 401 && typeof window !== "undefined") {
@@ -282,7 +285,7 @@ export async function previewScan(frame: Blob, opts: ScanOptions, token: string)
       body: fd,
     });
   } catch {
-    throw new ApiError(0, "Live preview failed — is the backend reachable?");
+    throw new ApiError(0, `Live preview failed — backend unreachable at ${API_DESC}?`);
   }
   if (res.status === 401 && typeof window !== "undefined") {
     clearSession();
@@ -316,7 +319,7 @@ export async function uploadScan(files: File[], opts: ScanOptions, token: string
       body: fd,
     });
   } catch {
-    throw new ApiError(0, "Upload failed — is the backend reachable?");
+    throw new ApiError(0, `Upload failed — backend unreachable at ${API_DESC}?`);
   }
   if (res.status === 401 && typeof window !== "undefined") {
     clearSession();

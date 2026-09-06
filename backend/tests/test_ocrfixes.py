@@ -91,3 +91,58 @@ def test_month_year_manufacturing_dates():
     # Full dates still win over everything.
     d3 = extract_fields("Mfg: 01/01/2025 Exp: 01/01/2026")
     assert (d3.mfg_date.day, d3.expiry_date.day) == (1, 1)
+
+
+def test_manufacture_without_d_anchor():
+    d = extract_fields("Month and Year of Manufacture : December 2025")
+    assert d.mfg_date is not None and (d.mfg_date.month, d.mfg_date.year) == (12, 2025)
+
+
+def test_percent_misread_rupee_mrp():
+    d = extract_fields("Maximum Retail Price : % 12,499.00 (Inclusive of all taxes)")
+    assert d.mrp == 12499.0 and d.mrp_includes_taxes
+
+
+def test_ongin_typo_origin_and_second_chance_mfg():
+    d = extract_fields("Country of Ongin : India")
+    assert d.country_of_origin == "India" and not d.is_imported
+    d2 = extract_fields("Manuiacture : December 2025")
+    assert d2.mfg_date is not None and d2.mfg_date.month == 12
+
+
+def test_ner_care_span_needs_contact(monkeypatch):
+    import app.services.extraction as ex
+    from app.services.rule_engine import ProductDeclaration
+
+    def _fake_nlp(span):
+        class Ent:
+            label_ = "CARE"
+            text = span
+
+        class Doc:
+            def __init__(self):
+                self.ents = [Ent()]
+
+        return lambda _text: Doc()
+
+    monkeypatch.setattr(ex, "_ner_model", lambda: _fake_nlp("Customer Care Details The"))
+    assert ex._ner_refine("Customer Care Details The", ProductDeclaration()).consumer_care is None
+    monkeypatch.setattr(ex, "_ner_model", lambda: _fake_nlp("Customer Care care@x.in 1800-111"))
+    got = ex._ner_refine("x", ProductDeclaration()).consumer_care
+    assert got == "Customer Care care@x.in 1800-111"
+
+
+def test_generic_skips_declaration_lines():
+    d = extract_fields(
+        "Maximum Retail Price : Rs. 12499 Inclusive of all taxes\n"
+        "Net Quantity :  1 Unit\n"
+        "Smart Watch with Charger"
+    )
+    assert d.generic_name == "Smart Watch with Charger"
+
+
+def test_care_contact_on_next_line():
+    d = extract_fields("Customer Care Details\ncare@acme.in 1800-123-456")
+    assert d.consumer_care is not None and "care@acme.in" in d.consumer_care
+    d2 = extract_fields("Toll Free\n1800-123-456")
+    assert d2.consumer_care is not None

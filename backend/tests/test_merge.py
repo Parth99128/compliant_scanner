@@ -27,8 +27,9 @@ def _auth() -> str:
     return r.json()["access_token"]
 
 
-def _files(n):
-    return [("files", (f"m{i}.png", _png_bytes(), "image/png")) for i in range(n)]
+def _files(n, texts=None):
+    texts = texts or ["MRP Rs. 99 Inclusive of all taxes"] * n
+    return [("files", (f"m{i}.png", _png_bytes(texts[i % len(texts)]), "image/png")) for i in range(n)]
 
 
 def test_merge_two_images_ok():
@@ -158,3 +159,100 @@ def test_frame_entry_keeps_dense_panels_whole():
     entry = _frame_entry(0, out, 300, is_best=True, measured=True)
     assert len(entry["boxes"]) == 300
     assert entry["word_count"] == 300
+
+
+def test_report_embeds_every_angle():
+    """Merged PDF carries one annotated photo per uploaded angle."""
+    from types import SimpleNamespace
+
+    from app.api.v1.routes import _report_frames
+
+    rec = SimpleNamespace(
+        id="abc123",
+        image_blob=b"bestbytes",
+        boxes_json='{"w": 10, "h": 10, "boxes": []}',
+        ocr_width=10,
+        ocr_height=10,
+        frames_json='[{"index": 0, "is_best": true}, {"index": 1, "is_best": false}]',
+    )
+    rows = [SimpleNamespace(frame_index=1, image_blob=b"angle2bytes")]
+    frames = _report_frames(rec, rows)
+    assert [f["label"] for f in frames] == ["Angle 1 (Best)", "Angle 2"]
+    assert [f["blob"] for f in frames] == [b"bestbytes", b"angle2bytes"]
+
+    tok = _auth()
+    h = {"Authorization": f"Bearer {tok}"}
+    up = client.post(
+        "/api/v1/scans/merge",
+        files=_files(2, ["MRP Rs. 99 Inclusive of all taxes", "Net Qty: 500 g"]),
+        headers=h,
+    )
+    assert up.status_code == 200, up.text
+    scan_id = up.json()["id"]
+    client.patch(
+        f"/api/v1/scans/{scan_id}/product",
+        json={"product_name": "ReportProd", "brand_name": "ReportBrand", "category": "Snacks"},
+        headers=h,
+    )
+    client.post(f"/api/v1/scans/{scan_id}/review", json={"decision": "confirm", "notes": "ok"}, headers=h)
+    r = client.get(f"/api/v1/scans/{scan_id}/report", headers=h)
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.content[:4] == b"%PDF"
+    # One embedded image XObject per uploaded angle (dedup only merges
+    # byte-identical captures, so the angles differ like real photos).
+    assert r.content.count(b"/Subtype /Image") >= 2
+
+
+def _report_rec():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id="rpt1",
+        request_id="q",
+        ocr_engine="tesseract",
+        ocr_confidence=90.0,
+        verdict="COMPLIANT",
+        status="final",
+        reviewed_by="tester",
+        reviewed_at=None,
+        created_at=None,
+        scan_lat=None,
+        scan_lon=None,
+        product_name="P",
+        brand_name="B",
+        category="C",
+        image_blob=None,
+    )
+
+
+def test_report_fits_tall_portrait_angles():
+    """Regression: tall phone portraits must shrink to the page — a fixed
+    150mm width overruns the frame and crashes the build (LayoutError→500)."""
+    import io
+
+    from PIL import Image, ImageDraw
+
+    from app.services.report import build_report_pdf
+
+    img = Image.new("RGB", (900, 2000), "white")
+    ImageDraw.Draw(img).text((40, 60), "MRP Rs. 99 Inclusive of all taxes", fill="black")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=72)
+    blob = buf.getvalue()
+    img2 = Image.new("RGB", (900, 2000), "white")
+    ImageDraw.Draw(img2).text((40, 900), "Net Qty: 500 g", fill="black")
+    buf2 = io.BytesIO()
+    img2.save(buf2, format="JPEG", quality=72)
+    blob2 = buf2.getvalue()
+    boxes = [{"text": "MRP", "x": 40, "y": 60, "w": 120, "h": 40, "confidence": 95.0}]
+    pdf = build_report_pdf(
+        _report_rec(),
+        [],
+        [],
+        [
+            {"label": "Angle 1 (Best)", "blob": blob, "boxes": boxes, "cw": 900, "ch": 2000},
+            {"label": "Angle 2", "blob": blob2, "boxes": boxes, "cw": 900, "ch": 2000},
+        ],
+    )
+    assert pdf[:4] == b"%PDF"
+    assert pdf.count(b"/Subtype /Image") >= 2

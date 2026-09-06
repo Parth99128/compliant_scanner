@@ -10,7 +10,7 @@ from app.services.rule_engine import ProductDeclaration
 
 MRP_RE = re.compile(
     r"(?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
-    r"\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+    r"\s*(?:Rs\.?|INR|₹|%)?\s*[:\-]?\s*(?:Rs\.?|INR|₹|%)?\s*([\d,]+(?:\.\d{1,2})?)",
     re.IGNORECASE,
 )
 INCL_TAXES_RE = re.compile(r"incl.*?o[ft]\W*all\W*tax", re.IGNORECASE)
@@ -20,7 +20,7 @@ NET_QTY_RE = re.compile(
 )
 NET_QTY_FALLBACK_RE = re.compile(r"\b([\d.,]+)\s*(kg|g\b|mg|ml|l\b|litre?s?|units?)\b", re.IGNORECASE)
 MFG_RE = re.compile(
-    r"(?:mfg|meg|mtg|manufactured|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
+    r"(?:mfg|meg|mtg|manufactur\w*|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
     re.IGNORECASE,
 )
 EXP_RE = re.compile(
@@ -33,10 +33,12 @@ BARE_DATE_RE = re.compile(
     r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|\d{1,2}[/\-](?:19|20)\d{2})\b"
 )
 CARE_RE = re.compile(
-    r"(?:(?:customer|consumer)\s*[a-z]?are\b|helpline|toll\s*free)[^\n]*?([\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
+    r"(?:(?:customer|consumer)\s*[a-z]?are\b|helpline|toll\s*free)[\s\S]{0,300}?([\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
     re.IGNORECASE,
 )
-ORIGIN_RE = re.compile(r"(?:country\s*o[ft]\s*origin|made\s*in)\s*[:\-]?\s*([A-Za-z ]{2,30})", re.IGNORECASE)
+ORIGIN_RE = re.compile(
+    r"(?:country\s*o[ft]\s*(?:origin|ongin)|made\s*in)\s*[:\-]?\s*([A-Za-z ]{2,30})", re.IGNORECASE
+)
 ADDRESS_HINT_RE = re.compile(r"\b(?:plot|street|road|sector|nagar|mumbai|delhi|india|\d{6})\b", re.IGNORECASE)
 
 DATE_FMTS = (
@@ -75,7 +77,7 @@ _MONTHS_FULL = (
 _DIGIT_FIX_TABLE = str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1", "S": "5", "s": "5", "B": "8"})
 _MRP_AMT_RE = re.compile(
     r"((?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
-    r"\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*)([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
+    r"\s*(?:Rs\.?|INR|₹|%)?\s*[:\-]?\s*(?:Rs\.?|INR|₹|%)?\s*)([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
     re.IGNORECASE,
 )
 _DATE_TOKEN_RE = re.compile(r"\b([\dIlO]{1,2})[/\-.]([\dIlO]{1,2})[/\-.]([\dIlO]{2,4})\b")
@@ -270,7 +272,18 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
                 patch["expiry_date"] = d
         if decl.manufacturer_name is None and "MANUFACTURER" in vals:
             patch["manufacturer_name"] = vals["MANUFACTURER"][:160]
-        if decl.consumer_care is None and "CARE" in vals:
+        # The rule needs a *contact*, not just the words "customer care":
+        # accept the NER span only if it carries email/phone/toll-free
+        # evidence, else a heading alone would fake a PASS.
+        if (
+            decl.consumer_care is None
+            and "CARE" in vals
+            and re.search(
+                r"[\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*",
+                vals["CARE"],
+                re.IGNORECASE,
+            )
+        ):
             patch["consumer_care"] = vals["CARE"][:300]
         return _dc.replace(decl, **patch) if patch else decl
     except Exception:
@@ -305,6 +318,28 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             mfg = bare[0]
         if exp is None and len(bare) >= 2:
             exp = bare[1]
+    if mfg is None:
+        # Second chance: month-year token on a line mentioning a
+        # manufacture-ish word whose anchor itself got mangled
+        # ("Manuiacture : December 2025"). Same-line only, strict match.
+        for ln in text.splitlines():
+            words = re.findall(r"[A-Za-z]{4,}", ln)
+            if not any(
+                difflib.get_close_matches(
+                    w.title(),
+                    ["Manufacture", "Manufactured", "Manufacturing", "Packing", "Packed", "Mfg"],
+                    n=1,
+                    cutoff=0.85,
+                )
+                for w in words
+            ):
+                continue
+            m = re.search(r"([A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{1,2}[/\-]\d{2,4})", ln)
+            if m:
+                cand = _parse_date(m.group(1))
+                if cand:
+                    mfg = cand
+                    break
 
     m = CARE_RE.search(text)
     care = m.group(0).strip()[:300] if m else None
@@ -313,11 +348,27 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
     origin = m.group(1).strip() if m else None
     imported = origin is not None and origin.lower() not in ("india",)
 
-    # Heuristic: generic name = first text line with real wording. OCR often
-    # leads with page furniture (numbered badges like "1", rules, stray
+    # Heuristic: generic name = first text line with real wording that is NOT
+    # itself a declaration (MRP / net qty / dates / care / origin / tax note).
+    # OCR often leads with page furniture (numbered badges like "1", rules, stray
     # punctuation), so skip lines without at least 3 letters.
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    generic = next((ln[:120] for ln in lines if sum(c.isalpha() for c in ln) >= 3), None)
+
+    def _is_declaration_line(ln: str) -> bool:
+        return bool(
+            MRP_RE.search(ln)
+            or NET_QTY_RE.search(ln)
+            or MFG_RE.search(ln)
+            or EXP_RE.search(ln)
+            or CARE_RE.search(ln)
+            or ORIGIN_RE.search(ln)
+            or INCL_TAXES_RE.search(ln)
+        )
+
+    generic = next(
+        (ln[:120] for ln in lines if sum(c.isalpha() for c in ln) >= 3 and not _is_declaration_line(ln)),
+        None,
+    )
     addr_lines = [ln for ln in lines if ADDRESS_HINT_RE.search(ln)]
     mfr_name = addr_lines[0][:160] if addr_lines else None
     mfr_addr = "; ".join(addr_lines[:2])[:300] if addr_lines else None

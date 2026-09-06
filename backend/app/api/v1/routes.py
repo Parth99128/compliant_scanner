@@ -1125,6 +1125,42 @@ def explain_scan(
     )
 
 
+def _report_frames(rec: ScanRecord, extra_rows: list) -> list[dict]:
+    """Annotated-evidence frames for the PDF: best capture + every extra angle.
+
+    Pure assembly (DB rows in, render dicts out) so it is unit-testable.
+    Each entry: {label, blob, boxes, cw, ch}. Pre-gallery rows yield one frame.
+    """
+    try:
+        meta = json.loads(rec.frames_json or "[]")
+    except Exception:
+        meta = []
+    by_index = {f["index"]: f for f in meta if isinstance(f, dict) and "index" in f}
+    best_idx = next((i for i, f in by_index.items() if f.get("is_best")), 0)
+    boxes, coord_w, coord_h = _stored_boxes(rec)
+    frames = [
+        {
+            "label": f"Angle {best_idx + 1} (Best)",
+            "blob": rec.image_blob,
+            "boxes": boxes,
+            "cw": coord_w,
+            "ch": coord_h,
+        }
+    ]
+    for row in sorted(extra_rows, key=lambda r: r.frame_index):
+        m = by_index.get(row.frame_index, {})
+        frames.append(
+            {
+                "label": f"Angle {row.frame_index + 1}",
+                "blob": row.image_blob,
+                "boxes": m.get("boxes") or [],
+                "cw": m.get("coord_w"),
+                "ch": m.get("coord_h"),
+            }
+        )
+    return [f for f in frames if f["blob"]]
+
+
 @router.get("/scans/{scan_id}/report", tags=["scans"])
 def scan_report(scan_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     rec = _get_scan(scan_id, user, db)
@@ -1138,8 +1174,8 @@ def scan_report(scan_id: str, db: Session = Depends(get_db), user: User = Depend
     warnings = []
     if rec.overrides_json and rec.overrides_json != "[]":
         warnings.append(f"Officer override by {rec.reviewed_by}: {rec.review_notes}")
-    boxes, coord_w, coord_h = _stored_boxes(rec)
-    pdf = build_report_pdf(rec, stored, warnings, boxes, coord_w, coord_h)
+    extras = db.query(ScanImage).filter(ScanImage.scan_id == scan_id).all()
+    pdf = build_report_pdf(rec, stored, warnings, _report_frames(rec, extras))
     return Response(
         content=pdf,
         media_type="application/pdf",

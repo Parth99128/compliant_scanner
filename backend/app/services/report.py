@@ -11,7 +11,7 @@ import io
 
 
 def _annotated_capture(
-    image_blob: bytes,
+    image_blob: bytes | bytearray,
     boxes: list[dict],
     coord_w: int | None,
     coord_h: int | None,
@@ -83,17 +83,27 @@ def build_report_pdf(
     scan,  # ScanRecord (duck-typed to avoid a hard model import)
     results: list[dict],
     warnings: list[str],
-    boxes: list[dict] | None = None,
-    coord_w: int | None = None,
-    coord_h: int | None = None,
+    frames: list[dict] | None = None,
 ) -> bytes:
+    """One annotated evidence photo per uploaded angle (label, blob, boxes...).
+
+    `frames` entries: {label, blob, boxes, cw, ch}. Falls back to the legacy
+    single capture when None (kept for backward compatibility).
+    """
     from xml.sax.saxutils import escape
 
     from reportlab.lib.pagesizes import A4  # type: ignore
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # type: ignore
     from reportlab.lib.units import mm  # type: ignore
     from reportlab.platypus import Image as RLImage  # type: ignore
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle  # type: ignore
+    from reportlab.platypus import (  # type: ignore
+        KeepTogether,  # type: ignore
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm)
@@ -109,10 +119,20 @@ def build_report_pdf(
         except Exception:
             return str(value or "—")
 
+    def _txt(value) -> str:
+        text = str(value or "").strip()
+        return text if text else "—"
+
     story = [
         Paragraph("LMPC Compliance Report", styles["Title"]),
         Spacer(1, 6 * mm),
         Paragraph(f"Scan ID: {scan.id} &nbsp;&nbsp; Request: {scan.request_id}", styles["Normal"]),
+        Paragraph(
+            f"Product: {escape(_txt(scan.product_name))} &nbsp;&nbsp; "
+            f"Brand: {escape(_txt(scan.brand_name))} &nbsp;&nbsp; "
+            f"Category: {escape(_txt(scan.category))}",
+            styles["Normal"],
+        ),
         Paragraph(
             f"Engine: {scan.ocr_engine} (confidence {scan.ocr_confidence}%) &nbsp;&nbsp; "
             f"Verdict: {scan.verdict} &nbsp;&nbsp; Review: {scan.status}"
@@ -180,24 +200,53 @@ def build_report_pdf(
         story.append(Paragraph(f"Warning: {escape(w)}", styles["Normal"]))
 
     story.append(Paragraph("Visual evidence", h3))
-    annotated = (
-        _annotated_capture(scan.image_blob, boxes or [], coord_w, coord_h) if scan.image_blob else None
+    evidence = (
+        frames
+        if frames is not None
+        else (
+            [{"label": "Capture", "blob": scan.image_blob, "boxes": [], "cw": None, "ch": None}]
+            if scan.image_blob
+            else []
+        )
     )
-    if annotated:
+    shown = 0
+    if evidence:
         from PIL import Image
 
-        with Image.open(io.BytesIO(annotated)) as probe:
-            iw, ih = probe.size
-        width = 170 * mm
-        story.append(RLImage(io.BytesIO(annotated), width=width, height=width * ih / iw))
-        story.append(
-            Paragraph(
-                "Stored capture with OCR word boxes (green: confidence ≥60%, "
-                "red: verify against the physical package).",
-                styles["Normal"],
+        for frame in evidence:
+            blob = frame.get("blob")
+            if not isinstance(blob, (bytes, bytearray)):
+                continue
+            annotated = _annotated_capture(blob, frame.get("boxes") or [], frame.get("cw"), frame.get("ch"))
+            if not annotated:
+                continue
+            with Image.open(io.BytesIO(annotated)) as probe:
+                iw, ih = probe.size
+            # Fit inside the page both ways: tall phone portraits at full
+            # width overrun the frame and crash the build (LayoutError).
+            width = 150 * mm
+            height = width * ih / iw if iw else 0
+            if height > 195 * mm:
+                height = 195 * mm
+                width = height * iw / ih if ih else width
+            story.append(
+                KeepTogether(
+                    [
+                        Paragraph(escape(str(frame.get("label", "Capture"))), styles["Normal"]),
+                        RLImage(io.BytesIO(annotated), width=width, height=height),
+                    ]
+                )
             )
-        )
-    else:
+            shown += 1
+        if shown:
+            story.append(
+                Paragraph(
+                    "Stored capture(s) with OCR word boxes (green: confidence ≥60%, "
+                    "red: verify against the physical package).",
+                    styles["Normal"],
+                )
+            )
+    if not shown:
         story.append(Paragraph("No stored capture for this scan.", styles["Normal"]))
 
     story.append(Paragraph("Enforcement summary (advisory)", h3))
