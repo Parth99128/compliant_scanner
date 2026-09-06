@@ -33,7 +33,7 @@ RULES_2011_PDF = "docs/legal-source/LMPC-Rules-2011_WB-mirror.pdf"
 RULE7_PAGES = "pp. 8-9"
 
 WEIGHT_VOLUME_UNITS = frozenset({"g", "kg", "mg", "ml", "l"})
-LENGTH_AREA_NUMBER_UNITS = frozenset({"cm", "m", "nos", "no", "pc", "pcs"})
+LENGTH_AREA_NUMBER_UNITS = frozenset({"cm", "m", "nos", "no", "pc", "pcs", "unit"})
 
 # Rule 7(2) Table-I: (max base qty in g/ml, normal mm, embossed mm).
 TABLE_I: list[tuple[float, float, float]] = [

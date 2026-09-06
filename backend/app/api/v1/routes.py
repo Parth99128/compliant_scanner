@@ -430,6 +430,31 @@ async def scan_preview(
     )
 
 
+def _gtin_cards(gtins: list[dict]) -> list[CheckResult]:
+    """INFO-only barcode cards with unique rule ids (packs carry 2+ barcodes).
+
+    Single barcode keeps the stable `LMPC-gtin` id; multiples get suffixed so
+    React keys and PDF rows stay unique. Pure function, unit-tested.
+    """
+    cards = []
+    for n, g in enumerate(gtins, start=1):
+        country = prefix_country(g["text"])
+        cards.append(
+            CheckResult(
+                rule_id="LMPC-gtin" if len(gtins) == 1 else f"LMPC-gtin-{n}",
+                status=Status.PASS,
+                message=f"Barcode {g['format']} {g['text']} (GS1 prefix: {country})",
+                field="gtin",
+                citation="GS1 prefix (voluntary identity cross-check)",
+                citation_verified=False,
+                observed=g["text"],
+                expected="consistent with declared origin",
+                severity="info",
+            )
+        )
+    return cards
+
+
 @dataclasses.dataclass
 class _PipelineOut:
     ocr_text: str
@@ -455,7 +480,8 @@ def _run_pipeline(
     """OCR -> extract -> calibrate -> rule-evaluate for one image. Never returns None."""
     clean = preprocess_for_ocr(raw)
     ocr = run_ocr(clean)
-    boxes = word_boxes(clean, ocr.config)
+    # Boxes ride along with the winning read — no extra Tesseract pass.
+    boxes = ocr.boxes or word_boxes(clean, ocr.config)
     # Orientation second pass: a sideways/upside-down capture reads weak.
     # Rotate ONLY then (a strong read is already upright — rotating it could
     # only hurt, e.g. labels mixing horizontal panels with a vertical strip).
@@ -476,7 +502,7 @@ def _run_pipeline(
                 except Exception:
                     ocr_r = None
                 if ocr_r and ocr_r.text.strip() and ocr_r.confidence > ocr.confidence:
-                    ocr, boxes, clean = ocr_r, word_boxes(upright, ocr_r.config), upright
+                    ocr, boxes, clean = ocr_r, ocr_r.boxes or word_boxes(upright, ocr_r.config), upright
     # Robustness second pass: when the first read is weak and a barcode is
     # present, mask the bars (VLM/OCR hallucinate digit soup on them) and
     # re-read; keep whichever read is stronger. Clean scans pay nothing.
@@ -497,7 +523,7 @@ def _run_pipeline(
                 except Exception:
                     ocr2 = None
                 if ocr2 and ocr2.text.strip() and ocr2.confidence > ocr.confidence:
-                    ocr, boxes, clean = ocr2, word_boxes(clean2, ocr2.config), clean2
+                    ocr, boxes, clean = ocr2, ocr2.boxes or word_boxes(clean2, ocr2.config), clean2
     decl = extract_fields(ocr.text)
     # Spatial calibration: explicit ppm wins, else auto-detect reference card.
     resolved_ppm = ppm if (ppm and ppm > 0) else detect_ppm_from_reference_card(raw)
@@ -534,23 +560,7 @@ def _run_pipeline(
     except Exception:
         gtins = []
     if gtins:
-        cards = list(report.results)
-        for g in gtins:
-            country = prefix_country(g["text"])
-            cards.append(
-                CheckResult(
-                    rule_id="LMPC-gtin",
-                    status=Status.PASS,
-                    message=f"Barcode {g['format']} {g['text']} (GS1 prefix: {country})",
-                    field="gtin",
-                    citation="GS1 prefix (voluntary identity cross-check)",
-                    citation_verified=False,
-                    observed=g["text"],
-                    expected="consistent with declared origin",
-                    severity="info",
-                )
-            )
-        report = dataclasses.replace(report, results=cards)
+        report = dataclasses.replace(report, results=[*report.results, *_gtin_cards(gtins)])
     coord_w, coord_h = _clean_dims(clean)
     return _PipelineOut(
         ocr_text=ocr.text,
@@ -746,7 +756,7 @@ async def merge_scans(
     )
     report = evaluate_compliance(decl, ocr_confidence=best.ocr_confidence or None)
     # Carry over barcode identity cards from the best frame (INFO only).
-    carried = [r for r in best.report.results if r.rule_id == "LMPC-gtin"]
+    carried = [r for r in best.report.results if r.rule_id.startswith("LMPC-gtin")]
     if carried:
         report = dataclasses.replace(report, results=[*report.results, *carried])
     warnings = list(report.warnings)

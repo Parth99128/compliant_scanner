@@ -34,13 +34,63 @@ class OcrResult:
 TESS_CONFIGS = ("--oem 3 --psm 3", "--oem 3 --psm 11")
 
 
+def _tesseract_full(image_bytes: bytes, config: str) -> tuple[str, float, list[WordBox]]:
+    """One image_to_data pass -> (text, mean confidence 0-100, word boxes)."""
+    import io
+
+    import pytesseract  # type: ignore
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(image_bytes))
+    data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
+    words: list[WordBox] = []
+    confs: list[float] = []
+    lines: list[str] = []
+    cur: list[str] = []
+    last_key: object = None
+    n = len(data.get("text", []))
+    for i in range(n):
+        t = str(data["text"][i]).strip()
+        if not t:
+            continue
+        # Rebuild line breaks (extraction + merge depend on line structure).
+        try:
+            key = (int(data["block_num"][i]), int(data["par_num"][i]), int(data["line_num"][i]))
+        except (KeyError, ValueError, TypeError):
+            key = (-1, -1, i)
+        if key != last_key and cur:
+            lines.append(" ".join(cur))
+            cur = []
+        last_key = key
+        try:
+            conf = float(data["conf"][i])
+        except (ValueError, TypeError):
+            conf = -1.0
+        if conf >= 0:
+            confs.append(conf)
+        cur.append(t)
+        try:
+            x, y, w, h = (int(data[k][i]) for k in ("left", "top", "width", "height"))
+        except (ValueError, TypeError, KeyError):
+            continue
+        words.append(WordBox(text=t, x=x, y=y, w=w, h=h, confidence=conf))
+    if cur:
+        lines.append(" ".join(cur))
+    text = "\n".join(lines)
+    conf = round(sum(confs) / len(confs), 1) if confs else 0.0
+    return text, conf, words
+
+
+# A first-pass read this strong is never beaten enough by PSM 11 to justify
+# a second full pass (~2-3s saved on every clean label).
+STRONG_READ_CONF = 80.0
+
+
 def _tesseract(image_bytes: bytes) -> OcrResult | None:
     try:
-        import io
         import os
 
         import pytesseract  # type: ignore
-        from PIL import Image
 
         # Auto-detect Windows default install (present but not on PATH).
         for candidate in (
@@ -50,15 +100,17 @@ def _tesseract(image_bytes: bytes) -> OcrResult | None:
             if os.path.exists(candidate):
                 pytesseract.pytesseract.tesseract_cmd = candidate
                 break
-        img = Image.open(io.BytesIO(image_bytes))
         best: OcrResult | None = None
-        for config in TESS_CONFIGS:
-            text = pytesseract.image_to_string(img, config=config)
+        for n, config in enumerate(TESS_CONFIGS):
+            text, conf, boxes = _tesseract_full(image_bytes, config)
             if text and text.strip():
-                conf = _mean_confidence(image_bytes, config)
-                cand = OcrResult(text=text.strip(), engine="tesseract", confidence=conf, config=config)
+                cand = OcrResult(
+                    text=text.strip(), engine="tesseract", confidence=conf, config=config, boxes=boxes
+                )
                 if best is None or cand.confidence > best.confidence:
                     best = cand
+                if n == 0 and best.confidence >= STRONG_READ_CONF:
+                    break  # clean read: skip the second pass entirely
         return best
     except Exception:
         return None
@@ -87,34 +139,7 @@ def _mean_confidence(image_bytes: bytes, config: str = "--oem 3 --psm 3") -> flo
 def word_boxes(image_bytes: bytes, config: str = "--oem 3 --psm 3") -> list[WordBox]:
     """Word-level bounding boxes for frontend overlays. Empty list on any failure."""
     try:
-        import io
-
-        import pytesseract  # type: ignore
-        from PIL import Image
-
-        img = Image.open(io.BytesIO(image_bytes))
-        data = pytesseract.image_to_data(img, config=config, output_type=pytesseract.Output.DICT)
-        boxes: list[WordBox] = []
-        n = len(data.get("text", []))
-        for i in range(n):
-            t = str(data["text"][i]).strip()
-            if not t:
-                continue
-            try:
-                conf = float(data["conf"][i])
-            except (ValueError, TypeError):
-                conf = -1.0
-            boxes.append(
-                WordBox(
-                    text=t,
-                    x=int(data["left"][i]),
-                    y=int(data["top"][i]),
-                    w=int(data["width"][i]),
-                    h=int(data["height"][i]),
-                    confidence=conf,
-                )
-            )
-        return boxes
+        return _tesseract_full(image_bytes, config)[2]
     except Exception:
         return []
 

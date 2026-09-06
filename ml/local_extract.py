@@ -40,7 +40,7 @@ def extract_label(image_bytes: bytes, ppm: float | None = None) -> dict:
     if ppm is None:
         ppm = detect_ppm_from_reference_card(image_bytes)
     ocr = run_ocr(clean)
-    boxes = word_boxes(clean, ocr.config)
+    boxes = ocr.boxes or word_boxes(clean, ocr.config)
     # Same gated rotation as the API pipeline: only a weak read may be
     # sideways — a strong read is already upright, never rotate it.
     if ocr.confidence < 60:

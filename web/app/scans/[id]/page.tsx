@@ -569,8 +569,8 @@ export default function ScanDetailPage(): React.JSX.Element {
             <h2 className="text-sm font-bold">Rule findings ({d.results.length})</h2>
             <p className="mb-3 text-xs text-slate-500">Amber cards need measurement — never passes. “Verified” means checked vs gazette PDF.</p>
             <div className="flex flex-col gap-2.5">
-              {d.results.map((r) => (
-                <RuleCard key={r.rule_id} check={r} />
+              {d.results.map((r, i) => (
+                <RuleCard key={`${r.rule_id}-${i}`} check={r} />
               ))}
             </div>
           </div>

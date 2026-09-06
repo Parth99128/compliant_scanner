@@ -30,6 +30,20 @@ export class ApiError extends Error {
   }
 }
 
+function friendlyError(status: number, raw: string): string {
+  // Never flash raw JSON (e.g. {"detail":"Invalid token"}) at officers:
+  // sessions simply expire after an hour of scanning.
+  if (status === 401) return "Session expired — please sign in again.";
+  if (status === 0) return "Cannot reach the API server. Is the backend running?";
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown };
+    if (typeof parsed.detail === "string" && parsed.detail) return parsed.detail.slice(0, 300);
+  } catch {
+    // Not JSON — fall through to raw text below.
+  }
+  return raw.slice(0, 300) || `Request failed (${status}).`;
+}
+
 async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}, token?: string): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -46,7 +60,7 @@ async function request<T>(path: string, schema: z.ZodType<T>, init: RequestInit 
       clearSession();
       window.dispatchEvent(new Event("lmpc:unauthorized"));
     }
-    throw new ApiError(res.status, (await res.text()).slice(0, 300));
+    throw new ApiError(res.status, friendlyError(res.status, await res.text()));
   }
   return schema.parse(await res.json());
 }
@@ -175,7 +189,7 @@ export async function fetchBlob(path: string, token: string): Promise<Blob> {
     clearSession();
     window.dispatchEvent(new Event("lmpc:unauthorized"));
   }
-  if (!res.ok) throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  if (!res.ok) throw new ApiError(res.status, friendlyError(res.status, await res.text()));
   return res.blob();
 }
 
@@ -270,7 +284,11 @@ export async function previewScan(frame: Blob, opts: ScanOptions, token: string)
   } catch {
     throw new ApiError(0, "Live preview failed — is the backend reachable?");
   }
-  if (!res.ok) throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  if (res.status === 401 && typeof window !== "undefined") {
+    clearSession();
+    window.dispatchEvent(new Event("lmpc:unauthorized"));
+  }
+  if (!res.ok) throw new ApiError(res.status, friendlyError(res.status, await res.text()));
   return ScanPreviewSchema.parse(await res.json());
 }
 
@@ -300,7 +318,11 @@ export async function uploadScan(files: File[], opts: ScanOptions, token: string
   } catch {
     throw new ApiError(0, "Upload failed — is the backend reachable?");
   }
-  if (!res.ok) throw new ApiError(res.status, (await res.text()).slice(0, 300));
+  if (res.status === 401 && typeof window !== "undefined") {
+    clearSession();
+    window.dispatchEvent(new Event("lmpc:unauthorized"));
+  }
+  if (!res.ok) throw new ApiError(res.status, friendlyError(res.status, await res.text()));
   return ScanDetailSchema.parse(await res.json());
 }
 

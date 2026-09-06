@@ -1,5 +1,8 @@
 """FastAPI app: versioned API, request_id middleware, JSON errors, rate limits, OpenAPI."""
 
+import os
+import threading
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,3 +64,17 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 
 app = create_app()
+
+
+def _warm_models() -> None:
+    """Preload the spaCy NER model off the request path (first scan pays ~4s otherwise)."""
+    try:
+        from app.services.extraction import extract_fields
+
+        extract_fields("warm up")
+    except Exception:  # noqa: S110 — warmup is best-effort by definition
+        pass
+
+
+if os.environ.get("TESTING", "0") != "1":
+    threading.Thread(target=_warm_models, daemon=True).start()

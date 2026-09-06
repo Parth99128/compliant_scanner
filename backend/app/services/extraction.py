@@ -9,24 +9,29 @@ from datetime import date, datetime
 from app.services.rule_engine import ProductDeclaration
 
 MRP_RE = re.compile(
-    r"(?:MRP|M\.?R\.?P\.?)\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*([\d,]+(?:\.\d{1,2})?)", re.IGNORECASE
+    r"(?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
+    r"\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)",
+    re.IGNORECASE,
 )
 INCL_TAXES_RE = re.compile(r"incl.*?o[ft]\W*all\W*tax", re.IGNORECASE)
 NET_QTY_RE = re.compile(
-    r"net\s*(?:q?t[yl]|quantity|wt|weight|vol|content|o?t?y)[^\d]*([\d.,]+)\s*(kg|g|mg|ml|l|litre?s?|cm|m|nos?|pcs?|pc)\b",
+    r"net\s*(?:q?t[yl]|quantity|wt|weight|vol|content|o?t?y)[^\d]*([\d.,]+)\s*(kg|g|mg|ml|l|litre?s?|cm|m|nos?|pcs?|pc|units?)\b",
     re.IGNORECASE,
 )
-NET_QTY_FALLBACK_RE = re.compile(r"\b([\d.,]+)\s*(kg|g\b|mg|ml|l\b|litre?s?)\b", re.IGNORECASE)
+NET_QTY_FALLBACK_RE = re.compile(r"\b([\d.,]+)\s*(kg|g\b|mg|ml|l\b|litre?s?|units?)\b", re.IGNORECASE)
 MFG_RE = re.compile(
-    r"(?:mfg|meg|mtg|manufactured|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}\s+\d{4}|\d{4}[/\-]\d{1,2})",
+    r"(?:mfg|meg|mtg|manufactured|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
     re.IGNORECASE,
 )
 EXP_RE = re.compile(
-    r"(?:exp|exf|expr|expiry|best\s*before|use\s*by)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}\s+\d{4}|\d+\s*(?:months?|days?|years?))",
+    r"(?:exp|exf|expr|expiry|best\s*before|use\s*by)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d+\s*(?:months?|days?|years?)|\d{1,2}[/\-]\d{2,4})",
     re.IGNORECASE,
 )
 # Fallback: bare dates with no keyword anchor (common when OCR drops the label word).
-BARE_DATE_RE = re.compile(r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4})\b")
+# MM/YYYY bare form is constrained to 19xx/20xx so prices/counts never match.
+BARE_DATE_RE = re.compile(
+    r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|\d{1,2}[/\-](?:19|20)\d{2})\b"
+)
 CARE_RE = re.compile(
     r"(?:(?:customer|consumer)\s*[a-z]?are\b|helpline|toll\s*free)[^\n]*?([\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
     re.IGNORECASE,
@@ -34,7 +39,21 @@ CARE_RE = re.compile(
 ORIGIN_RE = re.compile(r"(?:country\s*o[ft]\s*origin|made\s*in)\s*[:\-]?\s*([A-Za-z ]{2,30})", re.IGNORECASE)
 ADDRESS_HINT_RE = re.compile(r"\b(?:plot|street|road|sector|nagar|mumbai|delhi|india|\d{6})\b", re.IGNORECASE)
 
-DATE_FMTS = ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%Y-%m-%d", "%b %Y", "%B %Y", "%m/%Y")
+DATE_FMTS = (
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%d/%m/%y",
+    "%Y-%m-%d",
+    "%b %Y",
+    "%B %Y",
+    "%b %y",
+    "%B %y",
+    "%m/%Y",
+    "%m-%Y",
+    "%m/%y",
+    "%m-%y",
+)
 
 _MONTHS_FULL = (
     "January",
@@ -55,7 +74,8 @@ _MONTHS_FULL = (
 # (amount after MRP, digit runs in dates) — never to free text.
 _DIGIT_FIX_TABLE = str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1", "S": "5", "s": "5", "B": "8"})
 _MRP_AMT_RE = re.compile(
-    r"((?:MRP|M\.?R\.?P\.?)\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*)([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
+    r"((?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
+    r"\s*(?:Rs\.?|INR|₹)?\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*)([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
     re.IGNORECASE,
 )
 _DATE_TOKEN_RE = re.compile(r"\b([\dIlO]{1,2})[/\-.]([\dIlO]{1,2})[/\-.]([\dIlO]{2,4})\b")
@@ -157,6 +177,8 @@ def _parse_date(s: str) -> date | None:
     m = re.fullmatch(r"(\d{2})(\d{2})/(\d{4})", s)
     if m:
         s = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
+    # Month names print joined by hyphens/slashes too ("MAY-24", "JAN/2025").
+    s = re.sub(r"(?<=[A-Za-z])[-/](?=\d)", " ", s)
     # Month names print uppercase on packs ("JAN 2025") but strptime %b/%B
     # wants title case — retry normalized.
     for cand in (s, s.title()):
@@ -224,7 +246,7 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
             if v:
                 patch["mrp"] = v
         if (decl.net_quantity_value is None or not decl.net_quantity_unit) and "NET_QTY" in vals:
-            m = re.search(r"([\d.,]+)\s*(kg|g|mg|ml|l|cm|pcs?|nos?)\b", vals["NET_QTY"], re.IGNORECASE)
+            m = re.search(r"([\d.,]+)\s*(kg|g|mg|ml|l|cm|pcs?|nos?|units?)\b", vals["NET_QTY"], re.IGNORECASE)
             if m:
                 v = _norm_num(m.group(1))
                 if v:
@@ -232,14 +254,17 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
                     patch["net_quantity_unit"] = m.group(2).lower().rstrip("s")
         if decl.mfg_date is None and "MFG_DATE" in vals:
             m = re.search(
-                r"(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\w+\s+\d{4}|\d{4}[/\-]\d{1,2})",
+                r"(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\w+\s+\d{4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
                 vals["MFG_DATE"],
             )
             d = _parse_date(m.group(1)) if m else None
             if d:
                 patch["mfg_date"] = d
         if decl.expiry_date is None and "EXP_DATE" in vals:
-            m = re.search(r"(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-]\d{1,2})", vals["EXP_DATE"])
+            m = re.search(
+                r"(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
+                vals["EXP_DATE"],
+            )
             d = _parse_date(m.group(1)) if m else None
             if d:
                 patch["expiry_date"] = d
@@ -317,5 +342,25 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             is_imported=imported,
         ),
     )
+
+    # Gazetteer canonicalization (deterministic, offline): repair a mangled
+    # maker name ("Hindustan Uniiever" -> "Hindustan Unilever") or fill a
+    # missing one from OCR lines. Names only — never numbers/dates/MRP.
+    # Never raises; the raw OCR text stays on the scan for audit.
+    try:
+        import dataclasses as _dc
+
+        from app.services.gazetteer import fill_manufacturer, fix_manufacturer
+
+        if decl.manufacturer_name:
+            fixed, _score = fix_manufacturer(decl.manufacturer_name)
+            if fixed:
+                decl = _dc.replace(decl, manufacturer_name=fixed)
+        else:
+            found, _score = fill_manufacturer(text)
+            if found:
+                decl = _dc.replace(decl, manufacturer_name=found[:160])
+    except Exception:  # noqa: S110 — gazetteer is advisory; regex result always survives
+        pass
 
     return decl

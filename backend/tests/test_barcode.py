@@ -35,6 +35,23 @@ def test_unknown_prefix():
     assert prefix_country("9999999999999") == "Unknown"
 
 
+def test_gtin_rule_ids_stay_unique():
+    """Two barcodes must not share a rule id (React keys + PDF rows)."""
+    from app.api.v1.routes import _gtin_cards
+
+    one = _gtin_cards([{"format": "EAN-13", "text": "8902080000227"}])
+    assert [c.rule_id for c in one] == ["LMPC-gtin"]
+    assert all(c.passed and c.severity == "info" for c in one)
+    two = _gtin_cards(
+        [
+            {"format": "EAN-13", "text": "8902080000227"},
+            {"format": "QR-Code", "text": "BATCH42"},
+        ]
+    )
+    assert [c.rule_id for c in two] == ["LMPC-gtin-1", "LMPC-gtin-2"]
+    assert all(c.passed and c.severity == "info" for c in two)
+
+
 def test_gtin_card_present_but_never_blocks_verdict():
     body = {"username": "barcodeuser", "password": "barcodepass123"}
     client.post("/api/v1/auth/register", json=body)

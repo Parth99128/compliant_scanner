@@ -16,6 +16,8 @@ reportlab==5.0.1
 pytest==8.3.4
 httpx==0.28.1
 zxing-cpp==3.1.1
+# Gazetteer entity matching (RapidFuzz, MIT, C++ wheels, CPU-only, offline).
+rapidfuzz==3.14.5
 # Optional Florence-2 VLM fallback (local CPU). Needs a torch CPU build too
 # (pip installs the right wheel per platform; ~200 MB). transformers is pinned
 # to 4.x: Florence-2's hub modeling code breaks on transformers 5.x.
