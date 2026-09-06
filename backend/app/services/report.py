@@ -160,6 +160,14 @@ def build_report_pdf(
                 "Inspection location: not provided (GPS unavailable or desktop upload)", styles["Normal"]
             )
         )
+    if getattr(scan, "corrected_by", None):
+        story.append(
+            Paragraph(
+                f"Officer corrections by {scan.corrected_by} at {_ts(getattr(scan, 'corrected_at', None))} "
+                "— Rule 6 values below are officer-verified, measurements unchanged.",
+                styles["Normal"],
+            )
+        )
     story.append(Spacer(1, 4 * mm))
 
     story.append(Paragraph("Findings — with captured values", h3))

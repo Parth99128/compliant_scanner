@@ -108,6 +108,7 @@ const CheckSchema = z.object({
   expected: z.string().nullable().default(null),
   severity: z.string().default("info"),
   remedy: z.string().nullable().default(null),
+  manual: z.boolean().default(false),
 });
 export type Check = z.infer<typeof CheckSchema>;
 
@@ -162,6 +163,9 @@ const ScanDetailSchema = z.object({
   measured_index: z.number().nullable().default(null),
   scan_lat: z.number().nullable().default(null),
   scan_lon: z.number().nullable().default(null),
+  declaration: z.record(z.string(), z.unknown()).default({}),
+  corrected_by: z.string().nullable().default(null),
+  corrected_at: z.string().nullable().default(null),
 });
 export type ScanDetail = z.infer<typeof ScanDetailSchema>;
 
@@ -270,6 +274,34 @@ export function updateProduct(
   body: { product_name: string; brand_name: string; category: string }
 ): Promise<ScanDetail> {
   return request(`/scans/${id}/product`, ScanDetailSchema, { method: "PATCH", body: JSON.stringify(body) }, token);
+}
+
+export type FieldCorrections = {
+  manufacturer_name?: string;
+  manufacturer_address?: string;
+  generic_name?: string;
+  net_quantity_value?: number;
+  net_quantity_unit?: string;
+  mrp?: number;
+  mrp_includes_taxes?: boolean;
+  mfg_date?: string;
+  expiry_date?: string;
+  consumer_care?: string;
+  country_of_origin?: string;
+  is_imported?: boolean;
+  panel_area_cm2?: number;
+};
+
+export function updateFields(id: string, token: string, body: FieldCorrections): Promise<ScanDetail> {
+  return request(`/scans/${id}/fields`, ScanDetailSchema, { method: "PATCH", body: JSON.stringify(body) }, token);
+}
+
+export function attestFinding(
+  id: string,
+  token: string,
+  body: { rule_id: string; observed?: string; present?: boolean }
+): Promise<ScanDetail> {
+  return request(`/scans/${id}/findings`, ScanDetailSchema, { method: "PATCH", body: JSON.stringify(body) }, token);
 }
 
 export interface ScanOptions {

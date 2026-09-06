@@ -6,11 +6,12 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
+import { FindingRow, EDITABLE_RULES } from "@/components/finding-row";
 import { AlertDestructive } from "@/components/ui/alert";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toaster";
-import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateProduct, type Check, type FrameInfo, type ScanDetail } from "@/lib/api";
+import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateFields, updateProduct, type Check, type FieldCorrections, type FrameInfo, type ScanDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function verdictClasses(v: string): string {
@@ -298,13 +299,16 @@ export default function ScanDetailPage(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [notes, setNotes] = React.useState("");
   const [actionError, setActionError] = React.useState("");
-  const [busy, setBusy] = React.useState<"review" | "pdf" | "explain" | null>(null);
+  const [busy, setBusy] = React.useState<"review" | "pdf" | "explain" | "fields" | null>(null);
   const [explanation, setExplanation] = React.useState("");
   const [showOcr, setShowOcr] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState(false);
   const [pName, setPName] = React.useState("");
   const [pBrand, setPBrand] = React.useState("");
   const [pCat, setPCat] = React.useState("");
+  const [editingFields, setEditingFields] = React.useState(false);
+  const [fVals, setFVals] = React.useState<Record<string, string>>({});
+  const [fBools, setFBools] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     if (ready && !session) router.replace("/login");
@@ -406,6 +410,76 @@ export default function ScanDetailPage(): React.JSX.Element {
     }
   }
 
+  function declStr(key: string): string {
+    const v = d.declaration[key];
+    return v == null ? "" : String(v);
+  }
+
+  function openFieldEditor(): void {
+    const vals: Record<string, string> = {};
+    for (const k of [
+      "manufacturer_name", "manufacturer_address", "generic_name",
+      "net_quantity_value", "net_quantity_unit", "mrp", "mfg_date",
+      "expiry_date", "consumer_care", "country_of_origin", "panel_area_cm2",
+    ]) {
+      vals[k] = declStr(k);
+    }
+    setFVals(vals);
+    setFBools({
+      mrp_includes_taxes: d.declaration["mrp_includes_taxes"] === true,
+      is_imported: d.declaration["is_imported"] === true,
+    });
+    setEditingFields(true);
+  }
+
+  async function saveFields(): Promise<void> {
+    if (!session) return;
+    setActionError("");
+    setBusy("fields");
+    try {
+      const body: FieldCorrections = {};
+      const putText = (
+        k:
+          | "manufacturer_name"
+          | "manufacturer_address"
+          | "generic_name"
+          | "net_quantity_unit"
+          | "consumer_care"
+          | "country_of_origin"
+      ) => {
+        body[k] = fVals[k] ?? "";
+      };
+      putText("manufacturer_name");
+      putText("manufacturer_address");
+      putText("generic_name");
+      putText("net_quantity_unit");
+      putText("consumer_care");
+      putText("country_of_origin");
+      const putNum = (k: "net_quantity_value" | "mrp" | "panel_area_cm2") => {
+        const raw = (fVals[k] ?? "").trim();
+        if (raw !== "" && !Number.isNaN(Number(raw))) body[k] = Number(raw);
+      };
+      putNum("net_quantity_value");
+      putNum("mrp");
+      putNum("panel_area_cm2");
+      if ((fVals["mfg_date"] ?? "").trim() !== "") body.mfg_date = fVals["mfg_date"].trim();
+      if ((fVals["expiry_date"] ?? "").trim() !== "") body.expiry_date = fVals["expiry_date"].trim();
+      body.mrp_includes_taxes = !!fBools["mrp_includes_taxes"];
+      body.is_imported = !!fBools["is_imported"];
+      await updateFields(id, session.token, body);
+      setEditingFields(false);
+      await queryClient.invalidateQueries({ queryKey: ["scan", id] });
+      await queryClient.invalidateQueries({ queryKey: ["scans"] });
+      await queryClient.invalidateQueries({ queryKey: ["stats"] });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Saving corrections failed.";
+      setActionError(msg);
+      notifyError(e, msg);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div>
       <p className="text-xs text-slate-500">
@@ -430,6 +504,14 @@ export default function ScanDetailPage(): React.JSX.Element {
           )}
         </p>
       </div>
+
+      {d.corrected_by && (
+        <p className="mt-3 rounded-md border border-sky-300 bg-sky-50 px-4 py-3 text-[13px] text-sky-900">
+          Officer-corrected by <strong>{d.corrected_by}</strong>
+          {d.corrected_at ? ` at ${d.corrected_at.slice(0, 16).replace("T", " ")}` : ""} — Rule 6
+          values below are officer-verified; machine measurements unchanged.
+        </p>
+      )}
 
       {actionError && <AlertDestructive className="mt-3">{actionError}</AlertDestructive>}
 
@@ -566,13 +648,123 @@ export default function ScanDetailPage(): React.JSX.Element {
           </div>
 
           <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-bold">Rule findings ({d.results.length})</h2>
-            <p className="mb-3 text-xs text-slate-500">Amber cards need measurement — never passes. “Verified” means checked vs gazette PDF.</p>
-            <div className="flex flex-col gap-2.5">
-              {d.results.map((r, i) => (
-                <RuleCard key={`${r.rule_id}-${i}`} check={r} />
-              ))}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Rule 6 · Mandatory declarations</p>
+                <h2 className="font-display text-base font-black text-navy-950">Extracted declarations</h2>
+              </div>
+              {!editingFields && (
+                <button
+                  className="flex-none text-xs font-bold text-slate-700 hover:underline"
+                  onClick={openFieldEditor}
+                >
+                  Correct values
+                </button>
+              )}
             </div>
+            <p className="mb-3 mt-1 text-xs text-slate-500">Correct a mis-read value or mark a declaration present. Amber cards need measurement — never passes.</p>
+            {editingFields ? (
+              <div className="mb-3 rounded-md border border-sky-300 bg-sky-50/50 p-3">
+                <p className="mb-2 text-xs font-semibold text-sky-900">
+                  Fix OCR-mangled Rule 6 values. Machine-measured sizes cannot be edited. Saving re-runs the rules.
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[
+                    ["manufacturer_name", "Maker name"],
+                    ["manufacturer_address", "Maker address"],
+                    ["generic_name", "Generic name"],
+                    ["net_quantity_value", "Net qty value"],
+                    ["net_quantity_unit", "Net qty unit"],
+                    ["mrp", "MRP amount"],
+                    ["consumer_care", "Care contact"],
+                    ["country_of_origin", "Origin country"],
+                    ["panel_area_cm2", "Panel area (cm²)"],
+                  ].map(([k, label]) => (
+                    <label key={k} className="block text-xs font-semibold text-slate-600">
+                      {label}
+                      <input
+                        value={fVals[k] ?? ""}
+                        onChange={(e) => setFVals((p) => ({ ...p, [k]: e.target.value }))}
+                        className="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[13px] font-normal"
+                      />
+                    </label>
+                  ))}
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Mfg date
+                    <input
+                      type="date"
+                      aria-label="Manufacture date"
+                      value={(fVals["mfg_date"] ?? "").slice(0, 10)}
+                      onChange={(e) => setFVals((p) => ({ ...p, mfg_date: e.target.value }))}
+                      className="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[13px] font-normal"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Expiry date
+                    <input
+                      type="date"
+                      aria-label="Expiry date"
+                      value={(fVals["expiry_date"] ?? "").slice(0, 10)}
+                      onChange={(e) => setFVals((p) => ({ ...p, expiry_date: e.target.value }))}
+                      className="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[13px] font-normal"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-4 text-[13px] font-medium text-slate-700">
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={!!fBools["mrp_includes_taxes"]}
+                      onChange={(e) => setFBools((p) => ({ ...p, mrp_includes_taxes: e.target.checked }))}
+                      className="accent-slate-900"
+                    />
+                    MRP includes all taxes
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={!!fBools["is_imported"]}
+                      onChange={(e) => setFBools((p) => ({ ...p, is_imported: e.target.checked }))}
+                      className="accent-slate-900"
+                    />
+                    Imported pack
+                  </label>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" disabled={busy !== null} onClick={saveFields}>
+                    {busy === "fields" ? "Saving…" : "Save corrections"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditingFields(false)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+            <div className="flex flex-col gap-2.5">
+              {d.results
+                .filter((r) => EDITABLE_RULES.has(r.rule_id))
+                .map((r) => (
+                  <FindingRow
+                    key={r.rule_id}
+                    scanId={id}
+                    token={session.token}
+                    check={r}
+                    onChanged={() => {
+                      void queryClient.invalidateQueries({ queryKey: ["scan", id] });
+                      void queryClient.invalidateQueries({ queryKey: ["scans"] });
+                      void queryClient.invalidateQueries({ queryKey: ["stats"] });
+                    }}
+                    onError={(e, msg) => {
+                      setActionError(msg);
+                      notifyError(e, msg);
+                    }}
+                  />
+                ))}
+              {d.results
+                .filter((r) => !EDITABLE_RULES.has(r.rule_id))
+                .map((r, i) => (
+                  <RuleCard key={`${r.rule_id}-${i}`} check={r} />
+                ))}
+            </div>
+            )}
           </div>
         </div>
       </div>

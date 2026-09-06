@@ -37,6 +37,14 @@ class ScanRecord(Base):
     product_name: Mapped[str] = mapped_column(String(160), default="")
     brand_name: Mapped[str] = mapped_column(String(160), default="")
     category: Mapped[str] = mapped_column(String(80), default="")
+    # Full Rule 6 + measurement snapshot of the evaluated declaration, so an
+    # officer correction re-runs the SAME rules (measurements preserved).
+    declaration_json: Mapped[str] = mapped_column(Text, default="{}")
+    corrected_by: Mapped[str] = mapped_column(String(64), default="")
+    corrected_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, default=None)
+    # Per-finding officer attestations {rule_id: {status?, observed?, by, at}}.
+    # Machine results stay pristine in results_json; overlays apply at read.
+    finding_overrides_json: Mapped[str] = mapped_column(Text, default="{}")
     # Calibration actually used (explicit PPM or auto-detected card). Null =
     # uncalibrated scan; shown in the UI so officers trust the Rule 7 outcome.
     ppm_used: Mapped[float] = mapped_column(Float, nullable=True, default=None)

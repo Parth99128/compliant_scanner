@@ -9,6 +9,8 @@
 - `GET /jobs/{job_id}` (owner/admin) → `JobOut`; async analysis never holds HTTP open (VPNs/proxies can't reap it)
 - `GET /scans` (Bearer; own scans, admin sees all; `?q=&verdict=&status=`) → `ScanSummaryOut[]` (each adds `preview`, `product_name`, `brand_name`, `category`, `has_image`; product auto-filled from extraction, overridable at upload)
 - `PATCH /scans/{id}/product` (owner/admin) `{product_name, brand_name, category}` → `ScanOut`
+- `PATCH /scans/{id}/fields` (owner/admin, partial Rule 6 JSON: maker/generic/qty/mrp/dates/care/origin/imported/panel area; machine-measured sizes ignored) → re-evaluated `ScanOut` with `corrected_by/at` audit + auto-synced product identity
+- `PATCH /scans/{id}/findings` (owner/admin, `{rule_id, observed?, present?}`; Rule 6 only) → per-finding attestation overlay (no engine re-run): text/Present attests PASS with `manual` flag, uncheck reverts or disputes; verdict refolded, machine rows pristine
 - `GET /stats/overview` (Bearer; scoped to role) → `{total, by_verdict, top_failed_rules, by_day, recent}`
 - `GET /scans/{id}` (owner/admin) → `ScanOut` (adds `has_image`, `coord_w/h`: OCR box space; `boxes[]` now persisted; `frames[]`: every uploaded angle `{index, is_best, measured, url, ocr_confidence, word_count, words_added, boxes[], coord_w/h}`; `measured_index`: angle Rule 7 was measured on — strongest read among calibrated frames)
 - `GET /scans/{id}/image` (owner/admin) → downscaled `image/jpeg` capture for the viewer (best frame; 404 when absent)

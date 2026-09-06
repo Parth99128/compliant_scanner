@@ -60,6 +60,10 @@ def ensure_columns() -> None:
         "ALTER TABLE scans ADD COLUMN scan_lon FLOAT",
         "ALTER TABLE scans ADD COLUMN warnings_json TEXT DEFAULT '[]'",
         "ALTER TABLE scans ADD COLUMN has_image BOOLEAN DEFAULT 0",
+        "ALTER TABLE scans ADD COLUMN declaration_json TEXT DEFAULT '{}'",
+        "ALTER TABLE scans ADD COLUMN corrected_by VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE scans ADD COLUMN corrected_at TIMESTAMP",
+        "ALTER TABLE scans ADD COLUMN finding_overrides_json TEXT DEFAULT '{}'",
     ]
     with engine.begin() as conn:
         for ddl in alters:

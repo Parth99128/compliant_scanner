@@ -39,6 +39,7 @@ class CheckOut(BaseModel):
     expected: str | None = None
     severity: str = "info"
     remedy: str | None = None
+    manual: bool = False  # officer-attested override of the machine finding
 
 
 class ComplianceOut(BaseModel):
@@ -100,6 +101,9 @@ class ScanOut(BaseModel):
     measured_index: int | None = None  # angle Rule 7 sizes were measured on
     scan_lat: float | None = None  # GPS at upload (null when unavailable)
     scan_lon: float | None = None
+    declaration: dict = {}  # evaluated Rule 6 + measurement snapshot (editable copy)
+    corrected_by: str | None = None
+    corrected_at: str | None = None
 
 
 class ScanSummaryOut(BaseModel):

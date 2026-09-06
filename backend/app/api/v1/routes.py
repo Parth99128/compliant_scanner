@@ -3,7 +3,7 @@ import dataclasses
 import json
 import os
 import traceback
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -133,6 +133,54 @@ def _valid_gps(lat: float | None, lon: float | None) -> tuple[float | None, floa
         return round(float(lat), 6), round(float(lon), 6)
     except (TypeError, ValueError):
         return None, None
+
+
+# Officer-correctable fields: the seven Rule 6 declarations plus panel area
+# (an officer-measured input Table-II needs). Machine-measured Rule 7 sizes
+# (min_*_mm, width ratio, embossed flag) are deliberately NOT editable.
+EDITABLE_FIELDS = frozenset(
+    {
+        "manufacturer_name",
+        "manufacturer_address",
+        "generic_name",
+        "net_quantity_value",
+        "net_quantity_unit",
+        "mrp",
+        "mrp_includes_taxes",
+        "mfg_date",
+        "expiry_date",
+        "consumer_care",
+        "country_of_origin",
+        "is_imported",
+        "panel_area_cm2",
+    }
+)
+
+
+def _decl_snapshot(decl: ProductDeclaration) -> str:
+    """Serializable copy of the evaluated declaration (dates as ISO strings)."""
+    data = dataclasses.asdict(decl)
+    for key in ("mfg_date", "expiry_date"):
+        data[key] = data[key].isoformat() if data[key] else None
+    return json.dumps(data)
+
+
+def _decl_from_snapshot(stored: str) -> ProductDeclaration:
+    """Rebuild a declaration from its snapshot; corrupt data yields a blank one."""
+    try:
+        data = json.loads(stored or "{}")
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    for key in ("mfg_date", "expiry_date"):
+        value = data.get(key)
+        try:
+            data[key] = date.fromisoformat(value) if value else None
+        except ValueError:
+            data[key] = None
+    known = {f.name for f in dataclasses.fields(ProductDeclaration)}
+    return ProductDeclaration(**{k: v for k, v in data.items() if k in known})
 
 
 def _choose_measured_index(confidences: list[float], numeral_mms: list[float | None], best_i: int) -> int:
@@ -267,6 +315,7 @@ def _checks(report) -> list[CheckOut]:
             expected=r.expected,
             severity=r.severity,
             remedy=r.remedy,
+            manual=bool(getattr(r, "manual", False)),
         )
         for r in report.results
     ]
@@ -290,6 +339,7 @@ def _stored_checks(stored: list[dict]) -> list[CheckOut]:
                 expected=r.get("expected"),
                 severity=r.get("severity", "info"),
                 remedy=r.get("remedy"),
+                manual=bool(r.get("manual", False)),
             )
         )
     return out
@@ -710,6 +760,7 @@ async def _process_single_scan(
         scan_lat=lat,
         scan_lon=lon,
         frames_json=json.dumps(frames),
+        declaration_json=_decl_snapshot(out.decl),
     )
     db.add(rec)
     db.commit()
@@ -919,6 +970,7 @@ async def _process_merge_scan(
         scan_lat=lat,
         scan_lon=lon,
         frames_json=json.dumps(frames),
+        declaration_json=_decl_snapshot(decl),
     )
     db.add(rec)
     db.commit()
@@ -1126,6 +1178,157 @@ def update_product(
     return _scan_out(rec)
 
 
+@router.patch("/scans/{scan_id}/fields", response_model=ScanOut, tags=["scans"])
+def update_fields(
+    scan_id: str,
+    body: DeclarationIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Officer correction of OCR-mangled Rule 6 values (e.g. garbage brand text).
+
+    Only sent fields change (exclude_unset); machine-measured Rule 7 sizes are
+    never editable. The corrected declaration re-runs the SAME rule engine with
+    stored measurements, so verdict/observed update together. The editor and
+    timestamp are stored as the audit trail and printed on the report.
+    """
+    from datetime import datetime
+
+    rec = _get_scan(scan_id, user, db)
+    base = _decl_from_snapshot(rec.declaration_json or "{}")
+    patch = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in EDITABLE_FIELDS}
+    if not patch:
+        raise HTTPException(status_code=422, detail="No editable Rule 6 fields sent")
+    try:
+        decl = dataclasses.replace(base, **patch)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Bad field value: {exc}")
+    report = evaluate_compliance(decl, ocr_confidence=rec.ocr_confidence or None)
+    rec.declaration_json = _decl_snapshot(decl)
+    machine = [dataclasses.asdict(r) for r in report.results]
+    effective = _apply_finding_overlays(machine, _finding_overlays(rec))
+    rec.verdict, rec.compliant = _fold_verdict(effective)
+    rec.results_json = json.dumps(machine)
+    rec.corrected_by = user.username
+    rec.corrected_at = datetime.now(UTC).replace(tzinfo=None)
+    # Keep the human-readable identity in step when maker/name were fixed.
+    if decl.generic_name:
+        rec.product_name = decl.generic_name[:160]
+    if decl.manufacturer_name:
+        rec.brand_name = decl.manufacturer_name[:160]
+    db.commit()
+    db.refresh(rec)
+    log.info("scan_fields_corrected", scan_id=rec.id, by=user.username, fields=sorted(patch))
+    return _scan_out(rec)
+
+
+# Rule 6 findings editable inline (mockup: per-finding text + Present box).
+# Anything else (Rule 7 measured sizes, GTIN) is machine-only.
+EDITABLE_FINDINGS = frozenset(
+    {
+        "LMPC-6.1-manufacturer",
+        "LMPC-6.1-generic",
+        "LMPC-6.1-netqty",
+        "LMPC-6.1-mrp",
+        "LMPC-6.1-dates",
+        "LMPC-6.1-care",
+        "LMPC-6.1-origin",
+    }
+)
+
+
+class FindingPatchIn(BaseModel):
+    rule_id: str = Field(min_length=1, max_length=64)
+    observed: str | None = Field(default=None, max_length=500)
+    present: bool | None = None
+
+
+def _finding_overlays(rec: ScanRecord) -> dict:
+    try:
+        data = json.loads(rec.finding_overrides_json or "{}")
+    except Exception:
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _apply_finding_overlays(stored: list[dict], overlays: dict) -> list[dict]:
+    """Officer attestations over machine findings. Machine rows stay pristine
+    in the DB; the overlay (status/observed + manual flag + verified suffix)
+    applies at read time for UI and report."""
+    out = []
+    for r in stored:
+        ov = overlays.get(r.get("rule_id")) if isinstance(r, dict) else None
+        if not isinstance(ov, dict):
+            out.append(r)
+            continue
+        r = dict(r)
+        if "status" in ov:
+            r["status"] = ov["status"]
+        if "observed" in ov:
+            r["observed"] = ov["observed"]
+        r["manual"] = True
+        r["message"] = (r.get("message", "") + " [officer-verified]").strip()
+        out.append(r)
+    return out
+
+
+def _fold_verdict(results: list[dict]) -> tuple[str, bool]:
+    """Verdict from effective statuses (mirrors rule_engine BLOCKING logic)."""
+    if any(r.get("status") in ("FAIL", "NOT_FOUND") for r in results if isinstance(r, dict)):
+        return "NON_COMPLIANT", False
+    if any(r.get("status") == "NOT_ASSESSABLE" for r in results if isinstance(r, dict)):
+        return "INCOMPLETE", False
+    return "COMPLIANT", True
+
+
+@router.patch("/scans/{scan_id}/findings", response_model=ScanOut, tags=["scans"])
+def update_finding(
+    scan_id: str,
+    body: FindingPatchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Inline per-finding attestation for Rule 6 (no engine re-run, no Re-validate).
+
+    - Text (+ optional Present check) on a failing finding: attested PASS with
+      the officer's text as the observed value.
+    - Uncheck Present on a PASS finding: officer disputes it -> FAIL.
+    - Uncheck on a failing finding: attestation withdrawn, machine truth returns.
+    Expected/citation never change. Audit: by/at per entry + scan-level trail.
+    """
+    from datetime import datetime
+
+    rec = _get_scan(scan_id, user, db)
+    if body.rule_id not in EDITABLE_FINDINGS:
+        raise HTTPException(status_code=422, detail="Only Rule 6 findings are officer-editable")
+    stored = json.loads(rec.results_json or "[]")
+    machine = next((r for r in stored if isinstance(r, dict) and r.get("rule_id") == body.rule_id), None)
+    if machine is None:
+        raise HTTPException(status_code=422, detail="Unknown rule for this scan")
+    overlays = _finding_overlays(rec)
+    if body.present is False and machine.get("status") != "PASS":
+        overlays.pop(body.rule_id, None)  # withdraw attestation, machine truth returns
+    else:
+        entry: dict = {"by": user.username, "at": datetime.now(UTC).replace(tzinfo=None).isoformat()}
+        if body.present is False:  # disputing a machine PASS
+            entry["status"] = "FAIL"
+        else:
+            entry["status"] = "PASS"
+            entry["observed"] = body.observed if body.observed is not None else machine.get("observed")
+        overlays[body.rule_id] = entry
+    effective = _apply_finding_overlays(stored, overlays)
+    verdict, compliant = _fold_verdict(effective)
+    rec.finding_overrides_json = json.dumps(overlays)
+    rec.verdict = verdict
+    rec.compliant = compliant
+    rec.corrected_by = user.username
+    rec.corrected_at = datetime.now(UTC).replace(tzinfo=None)
+    db.commit()
+    db.refresh(rec)
+    log.info("scan_finding_attested", scan_id=rec.id, by=user.username, rule=body.rule_id)
+    return _scan_out(rec)
+
+
 @router.get("/stats/overview", tags=["meta"])
 def stats_overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Officer dashboard aggregates: counts, top failing rules, daily volume, recent scans."""
@@ -1151,7 +1354,7 @@ def stats_overview(db: Session = Depends(get_db), user: User = Depends(current_u
         day = r.created_at.isoformat()[:10] if isinstance(r.created_at, datetime) else str(r.created_at)[:10]
         by_day[day] += 1
         try:
-            stored = json.loads(r.results_json or "[]")
+            stored = _apply_finding_overlays(json.loads(r.results_json or "[]"), _finding_overlays(r))
         except Exception:
             stored = []
         for res in stored:
@@ -1186,7 +1389,15 @@ def stats_overview(db: Session = Depends(get_db), user: User = Depends(current_u
 
 def _scan_out(rec: ScanRecord) -> ScanOut:
     stored = json.loads(rec.results_json or "[]")
+    effective = _apply_finding_overlays(stored, _finding_overlays(rec))
+    verdict, compliant = _fold_verdict(effective)
     boxes, coord_w, coord_h = _stored_boxes(rec)
+    try:
+        declaration = json.loads(rec.declaration_json or "{}")
+        if not isinstance(declaration, dict):
+            declaration = {}
+    except Exception:
+        declaration = {}
     try:
         warnings = json.loads(rec.warnings_json or "[]")
         if not isinstance(warnings, list):
@@ -1201,9 +1412,9 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         ocr_text=rec.ocr_text[:2000],
         ocr_confidence=rec.ocr_confidence,
         font_height_mm=rec.font_height_mm,
-        verdict=rec.verdict,
-        compliant=rec.compliant,
-        results=_stored_checks(stored),
+        verdict=verdict,
+        compliant=compliant,
+        results=_stored_checks(effective),
         warnings=[str(w) for w in warnings],
         reviewed_by=rec.reviewed_by or None,
         reviewed_at=rec.reviewed_at.isoformat() if rec.reviewed_at else None,
@@ -1218,6 +1429,9 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         measured_index=_measured_index_out(rec),
         scan_lat=rec.scan_lat,
         scan_lon=rec.scan_lon,
+        declaration=declaration,
+        corrected_by=rec.corrected_by or None,
+        corrected_at=rec.corrected_at.isoformat() if rec.corrected_at else None,
         boxes=[
             WordBoxOut(
                 text=str(b.get("text", "")),
@@ -1389,7 +1603,9 @@ def scan_report(scan_id: str, db: Session = Depends(get_db), user: User = Depend
     if rec.overrides_json and rec.overrides_json != "[]":
         warnings.append(f"Officer override by {rec.reviewed_by}: {rec.review_notes}")
     extras = db.query(ScanImage).filter(ScanImage.scan_id == scan_id).all()
-    pdf = build_report_pdf(rec, stored, warnings, _report_frames(rec, extras))
+    pdf = build_report_pdf(
+        rec, _apply_finding_overlays(stored, _finding_overlays(rec)), warnings, _report_frames(rec, extras)
+    )
     return Response(
         content=pdf,
         media_type="application/pdf",

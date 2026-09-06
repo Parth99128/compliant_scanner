@@ -98,6 +98,7 @@ class CheckResult:
     severity: str = "blocking"  # blocking | review | info
     remedy: str | None = None
     source_ref: str = ""
+    manual: bool = False  # True when an officer attested/edited this finding
 
     @property
     def passed(self) -> bool:
