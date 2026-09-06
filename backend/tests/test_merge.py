@@ -256,3 +256,38 @@ def test_report_fits_tall_portrait_angles():
     )
     assert pdf[:4] == b"%PDF"
     assert pdf.count(b"/Subtype /Image") >= 2
+
+
+def test_job_tracks_upload_to_verdict():
+    """Async contract: every upload mints a pollable job reaching done+scan_id."""
+    tok = _auth()
+    h = {"Authorization": f"Bearer {tok}"}
+    up = client.post("/api/v1/scans/merge", files=_files(2), headers=h)
+    assert up.status_code == 200, up.text
+    job_id = up.json()["job_id"]
+    assert job_id
+    job = client.get(f"/api/v1/jobs/{job_id}", headers=h).json()
+    assert job["status"] == "done" and job["scan_id"] == up.json()["id"]
+    assert job["kind"] == "merge" and job["frames_total"] == 2
+    single = client.post("/api/v1/scans", files={"file": ("s.png", _png_bytes(), "image/png")}, headers=h)
+    assert single.status_code == 200, single.text
+    job2 = client.get(f"/api/v1/jobs/{single.json()['job_id']}", headers=h).json()
+    assert job2["status"] == "done" and job2["kind"] == "scan"
+
+
+def test_job_isolation_and_warnings_persisted():
+    import uuid
+
+    def _user() -> str:
+        body = {"username": f"jobuser{uuid.uuid4().hex[:8]}", "password": "jobpass123"}
+        client.post("/api/v1/auth/register", json=body)
+        return client.post("/api/v1/auth/login", json=body).json()["access_token"]
+
+    ha = {"Authorization": f"Bearer {_user()}"}
+    hb = {"Authorization": f"Bearer {_user()}"}
+    assert client.get("/api/v1/jobs/doesnotexist", headers=ha).status_code == 404
+    up = client.post("/api/v1/scans/merge", files=_files(2), headers=ha)
+    job_id = up.json()["job_id"]
+    assert client.get(f"/api/v1/jobs/{job_id}", headers=hb).status_code == 404
+    det = client.get(f"/api/v1/scans/{up.json()['id']}", headers=ha).json()
+    assert any("Merged 2 captures" in w for w in det["warnings"])

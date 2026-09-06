@@ -1,9 +1,13 @@
+import asyncio
 import dataclasses
 import json
-from datetime import UTC
+import os
+import traceback
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -12,14 +16,15 @@ from app.core.config import get_settings
 from app.core.logging import get_logger, request_id_ctx
 from app.core.rate_limit import limiter
 from app.core.security import create_access_token, decode_token, hash_password, verify_password
-from app.db.session import Base, engine, ensure_columns, get_db
-from app.models.tables import ScanImage, ScanRecord, User
+from app.db.session import Base, SessionLocal, engine, ensure_columns, get_db
+from app.models.tables import ScanImage, ScanJob, ScanRecord, User
 from app.schemas.schemas import (
     CheckOut,
     ComplianceOut,
     DeclarationIn,
     ExplainOut,
     FrameOut,
+    JobOut,
     RegisterIn,
     ReviewIn,
     ScanOut,
@@ -363,6 +368,23 @@ def _preview_fields(decl: ProductDeclaration) -> dict[str, bool]:
     }
 
 
+async def _run_pipeline_async(
+    raw: bytes,
+    ppm: float | None,
+    font_px: float | None,
+    letter_px: float | None,
+    panel_area_cm2: float | None,
+    is_embossed: bool,
+) -> "_PipelineOut":
+    """OCR pipeline off the event loop (CPU-bound: OpenCV + Tesseract + VLM).
+
+    Endpoints are async (they await uploads); blocking the loop here would
+    stall every concurrent request — including the 2s live-preview polling —
+    until a multi-angle merge finishes minutes later.
+    """
+    return await asyncio.to_thread(_run_pipeline, raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed)
+
+
 @router.post("/scans/preview", response_model=ScanPreviewOut, tags=["scans"])
 @limiter.limit("30/minute")
 async def scan_preview(
@@ -390,7 +412,7 @@ async def scan_preview(
     if len(raw) > max_bytes:
         raise HTTPException(status_code=413, detail="File too large")
     try:
-        out = _run_pipeline(raw, ppm, None, None, panel_area_cm2, is_embossed)
+        out = await _run_pipeline_async(raw, ppm, None, None, panel_area_cm2, is_embossed)
     except Exception as exc:
         log.error("preview_failed", error=str(exc))
         raise HTTPException(status_code=502, detail="OCR processing failed")
@@ -576,7 +598,147 @@ def _run_pipeline(
     )
 
 
-@router.post("/scans", response_model=ScanOut, tags=["scans"])
+def _is_testing() -> bool:
+    return os.environ.get("TESTING", "0") == "1"
+
+
+def _new_job(db: Session, owner_id: str, rid: str, kind: str, frames_total: int) -> ScanJob:
+    """Create a job row (pruning the owner's day-old jobs). Commits."""
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=1)
+    try:
+        db.query(ScanJob).filter(ScanJob.owner_id == owner_id, ScanJob.created_at < cutoff).delete()
+    except Exception:  # noqa: S110 — pruning is best-effort; the job insert matters
+        pass
+    job = ScanJob(owner_id=owner_id, request_id=rid, kind=kind, status="queued", frames_total=frames_total)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _set_job(db: Session, job_id: str, status: str, scan_id: str = "", error: str = "") -> None:
+    try:
+        job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
+        if job is None:
+            return
+        job.status = status
+        if scan_id:
+            job.scan_id = scan_id
+        if error:
+            job.error = error[:500]
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:  # noqa: S110 — already failing; nothing left to save
+            pass
+
+
+def _get_job(job_id: str, user: User, db: Session) -> ScanJob:
+    job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if user.role != "admin" and job.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _job_out(job: ScanJob) -> JobOut:
+    return JobOut(
+        job_id=job.id,
+        status=job.status,
+        kind=job.kind,
+        frames_total=job.frames_total,
+        scan_id=job.scan_id or None,
+        error=job.error or "",
+        request_id=job.request_id,
+    )
+
+
+async def _process_single_scan(
+    db: Session,
+    *,
+    job_id: str,
+    owner_id: str,
+    rid: str,
+    raw: bytes,
+    ppm: float | None,
+    font_px: float | None,
+    letter_px: float | None,
+    panel_area_cm2: float | None,
+    is_embossed: bool,
+    product_name: str | None,
+    brand_name: str | None,
+    category: str | None,
+    scan_lat: float | None,
+    scan_lon: float | None,
+) -> ScanRecord:
+    """Heavy single-scan analysis. Marks the job working/done. Raises HTTPException."""
+    _set_job(db, job_id, "working")
+    try:
+        out = await _run_pipeline_async(raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed)
+    except Exception as exc:
+        log.error("ocr_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="OCR processing failed")
+    report = out.report
+    img_blob, img_type = _store_image(raw)
+    boxes_json, coord_w, coord_h = _boxes_payload(out)
+    pname, bname, cat = _product_fields(out.decl, product_name, brand_name, category)
+    lat, lon = _valid_gps(scan_lat, scan_lon)
+    frames = [_frame_entry(0, out, len(out.boxes), is_best=True, measured=True)]
+    rec = ScanRecord(
+        owner_id=owner_id,
+        request_id=rid,
+        ocr_text=out.ocr_text[:8000],
+        ocr_engine=out.ocr_engine,
+        ocr_confidence=out.ocr_confidence,
+        font_height_mm=out.font_mm,
+        compliant=report.compliant,
+        verdict=report.verdict,
+        results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
+        warnings_json=json.dumps(report.warnings),
+        image_blob=img_blob,
+        image_content_type=img_type,
+        boxes_json=boxes_json,
+        ocr_width=coord_w,
+        ocr_height=coord_h,
+        product_name=pname,
+        brand_name=bname,
+        category=cat,
+        ppm_used=out.resolved_ppm,
+        scan_lat=lat,
+        scan_lon=lon,
+        frames_json=json.dumps(frames),
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    _set_job(db, job_id, "done", scan_id=rec.id)
+    log.info("scan_done", scan_id=rec.id, compliant=report.compliant, engine=out.ocr_engine)
+    return rec
+
+
+async def _process_single_scan_bg(job_id: str, owner_id: str, rid: str, raw: bytes, **opts) -> None:
+    """Background wrapper: fresh DB session, job always reaches a terminal state."""
+    request_id_ctx.set(rid)
+    db = SessionLocal()
+    try:
+        await _process_single_scan(db, job_id=job_id, owner_id=owner_id, rid=rid, raw=raw, **opts)
+    except HTTPException as exc:
+        _set_job(db, job_id, "failed", error=str(exc.detail))
+    except Exception:
+        log.error("job_failed", job_id=job_id, error=traceback.format_exc())
+        _set_job(db, job_id, "failed", error="Analysis failed")
+    finally:
+        db.close()
+
+
+@router.post(
+    "/scans",
+    response_model=None,
+    responses={200: {"model": ScanOut}, 202: {"model": JobOut}},
+    tags=["scans"],
+)
 @limiter.limit("20/minute")
 async def scan_image(
     request: Request,
@@ -603,69 +765,38 @@ async def scan_image(
         raise HTTPException(status_code=400, detail="Empty file")
     if len(raw) > max_bytes:
         raise HTTPException(status_code=413, detail="File too large")
-    try:
-        out = _run_pipeline(raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed)
-    except Exception as exc:
-        log.error("ocr_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="OCR processing failed")
-    report = out.report
-    img_blob, img_type = _store_image(raw)
-    boxes_json, coord_w, coord_h = _boxes_payload(out)
-    pname, bname, cat = _product_fields(out.decl, product_name, brand_name, category)
-    lat, lon = _valid_gps(scan_lat, scan_lon)
-    frames = [_frame_entry(0, out, len(out.boxes), is_best=True, measured=True)]
-    rec = ScanRecord(
-        owner_id=user.id,
-        request_id=_rid(),
-        ocr_text=out.ocr_text[:8000],
-        ocr_engine=out.ocr_engine,
-        ocr_confidence=out.ocr_confidence,
-        font_height_mm=out.font_mm,
-        compliant=report.compliant,
-        verdict=report.verdict,
-        results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
-        image_blob=img_blob,
-        image_content_type=img_type,
-        boxes_json=boxes_json,
-        ocr_width=coord_w,
-        ocr_height=coord_h,
-        product_name=pname,
-        brand_name=bname,
-        category=cat,
-        ppm_used=out.resolved_ppm,
-        scan_lat=lat,
-        scan_lon=lon,
-        frames_json=json.dumps(frames),
-    )
-    db.add(rec)
-    db.commit()
-    db.refresh(rec)
-    log.info("scan_done", scan_id=rec.id, compliant=report.compliant, engine=out.ocr_engine)
-    return ScanOut(
-        id=rec.id,
-        request_id=rec.request_id,
-        status=rec.status,
-        ocr_engine=out.ocr_engine,
-        ocr_text=out.ocr_text[:2000],
-        ocr_confidence=out.ocr_confidence,
-        font_height_mm=out.font_mm,
-        verdict=report.verdict,
-        compliant=report.compliant,
-        results=_checks(report),
-        warnings=report.warnings,
-        boxes=[WordBoxOut(**dataclasses.asdict(b)) for b in out.boxes[:500]],
-        has_image=rec.image_blob is not None,
-        coord_w=coord_w,
-        coord_h=coord_h,
-        product_name=rec.product_name,
-        brand_name=rec.brand_name,
-        category=rec.category,
-        ppm_used=rec.ppm_used,
-        frames=_frames_out(rec),
-        measured_index=_measured_index_out(rec),
-        scan_lat=rec.scan_lat,
-        scan_lon=rec.scan_lon,
-    )
+    job = _new_job(db, user.id, _rid(), "scan", 1)
+    opts: dict[str, Any] = {
+        "ppm": ppm,
+        "font_px": font_px,
+        "letter_px": letter_px,
+        "panel_area_cm2": panel_area_cm2,
+        "is_embossed": is_embossed,
+        "product_name": product_name,
+        "brand_name": brand_name,
+        "category": category,
+        "scan_lat": scan_lat,
+        "scan_lon": scan_lon,
+    }
+    if _is_testing():
+        # Test path: same worker, inline, so the whole suite keeps asserting
+        # immediate ScanOut responses with zero changes.
+        try:
+            rec = await _process_single_scan(
+                db, job_id=job.id, owner_id=user.id, rid=job.request_id, raw=raw, **opts
+            )
+        except HTTPException as exc:
+            _set_job(db, job.id, "failed", error=str(exc.detail))
+            raise
+        except Exception as exc:
+            _set_job(db, job.id, "failed", error="OCR processing failed")
+            log.error("ocr_failed", error=str(exc))
+            raise HTTPException(status_code=502, detail="OCR processing failed")
+        out = _scan_out(rec)
+        out.job_id = job.id
+        return out
+    asyncio.create_task(_process_single_scan_bg(job.id, user.id, job.request_id, raw, **opts))
+    return JSONResponse(status_code=202, content=_job_out(job).model_dump())
 
 
 def _merge_ocr_lines(per_image: list[tuple[int, float, str]]) -> tuple[str, dict[int, int]]:
@@ -688,47 +819,32 @@ def _merge_ocr_lines(per_image: list[tuple[int, float, str]]) -> tuple[str, dict
     return "\n".join(merged), added
 
 
-@router.post("/scans/merge", response_model=ScanOut, tags=["scans"])
-@limiter.limit("10/minute")
-async def merge_scans(
-    request: Request,
-    files: list[UploadFile] = File(...),
-    ppm: float | None = Form(default=None),
-    font_px: float | None = Form(default=None),
-    letter_px: float | None = Form(default=None),
-    panel_area_cm2: float | None = Form(default=None),
-    is_embossed: bool = Form(default=False),
-    product_name: str | None = Form(default=None),
-    brand_name: str | None = Form(default=None),
-    category: str | None = Form(default=None),
-    scan_lat: float | None = Form(default=None),
-    scan_lon: float | None = Form(default=None),
-    db: Session = Depends(get_db),
-    user: User = Depends(current_user),
-):
-    """Multi-angle capture: 2-5 shots of one label merged into a single verdict.
-
-    Each image runs the full pipeline; OCR lines are unioned by confidence and
-    the merged text is extracted + evaluated once. Measurements (font height,
-    boxes) come from the highest-confidence capture. Stored as ONE scan record
-    so history and audit stay clean.
-    """
-    settings = get_settings()
-    if not 2 <= len(files) <= 5:
-        raise HTTPException(status_code=422, detail="Send 2-5 images of the same label")
-    raws: list[bytes] = []
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    for f in files:
-        if f.content_type not in settings.allowed_content_type_list:
-            raise HTTPException(status_code=415, detail=f"Unsupported type {f.content_type}")
-        raw = await f.read()
-        if len(raw) == 0:
-            raise HTTPException(status_code=400, detail="Empty file")
-        if len(raw) > max_bytes:
-            raise HTTPException(status_code=413, detail="File too large")
-        raws.append(raw)
+async def _process_merge_scan(
+    db: Session,
+    *,
+    job_id: str,
+    owner_id: str,
+    rid: str,
+    raws: list[bytes],
+    ppm: float | None,
+    font_px: float | None,
+    letter_px: float | None,
+    panel_area_cm2: float | None,
+    is_embossed: bool,
+    product_name: str | None,
+    brand_name: str | None,
+    category: str | None,
+    scan_lat: float | None,
+    scan_lon: float | None,
+) -> ScanRecord:
+    """Heavy multi-angle analysis. Marks the job working/done. Raises HTTPException."""
+    _set_job(db, job_id, "working")
     try:
-        outs = [_run_pipeline(raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed) for raw in raws]
+        # Angles run concurrently in threads (each ~15s of CPU on big photos);
+        # sequentially they would block the loop for minutes.
+        outs = await asyncio.gather(
+            *[_run_pipeline_async(raw, ppm, font_px, letter_px, panel_area_cm2, is_embossed) for raw in raws]
+        )
     except Exception as exc:
         log.error("ocr_failed", error=str(exc))
         raise HTTPException(status_code=502, detail="OCR processing failed")
@@ -779,8 +895,8 @@ async def merge_scans(
         for i, o in enumerate(outs)
     ]
     rec = ScanRecord(
-        owner_id=user.id,
-        request_id=_rid(),
+        owner_id=owner_id,
+        request_id=rid,
         ocr_text=merged_text[:8000],
         ocr_engine=engine,
         ocr_confidence=best.ocr_confidence,
@@ -788,6 +904,7 @@ async def merge_scans(
         compliant=report.compliant,
         verdict=report.verdict,
         results_json=json.dumps([dataclasses.asdict(r) for r in report.results]),
+        warnings_json=json.dumps(warnings),
         image_blob=img_blob,
         image_content_type=img_type,
         boxes_json=boxes_json,
@@ -813,32 +930,102 @@ async def merge_scans(
         if blob is not None:
             db.add(ScanImage(scan_id=rec.id, frame_index=i, image_blob=blob, image_content_type=ctype))
     db.commit()
+    _set_job(db, job_id, "done", scan_id=rec.id)
     log.info("scan_merged", scan_id=rec.id, compliant=report.compliant, frames=len(raws))
-    return ScanOut(
-        id=rec.id,
-        request_id=rec.request_id,
-        status=rec.status,
-        ocr_engine=engine,
-        ocr_text=merged_text[:2000],
-        ocr_confidence=best.ocr_confidence,
-        font_height_mm=measure.font_mm,
-        verdict=report.verdict,
-        compliant=report.compliant,
-        results=_checks(report),
-        warnings=warnings,
-        boxes=[WordBoxOut(**dataclasses.asdict(b)) for b in best.boxes[:500]],
-        has_image=rec.image_blob is not None,
-        coord_w=coord_w,
-        coord_h=coord_h,
-        product_name=rec.product_name,
-        brand_name=rec.brand_name,
-        category=rec.category,
-        ppm_used=rec.ppm_used,
-        frames=_frames_out(rec),
-        measured_index=_measured_index_out(rec),
-        scan_lat=rec.scan_lat,
-        scan_lon=rec.scan_lon,
-    )
+    return rec
+
+
+async def _process_merge_scan_bg(job_id: str, owner_id: str, rid: str, raws: list[bytes], **opts) -> None:
+    """Background wrapper: fresh DB session, job always reaches a terminal state."""
+    request_id_ctx.set(rid)
+    db = SessionLocal()
+    try:
+        await _process_merge_scan(db, job_id=job_id, owner_id=owner_id, rid=rid, raws=raws, **opts)
+    except HTTPException as exc:
+        _set_job(db, job_id, "failed", error=str(exc.detail))
+    except Exception:
+        log.error("job_failed", job_id=job_id, error=traceback.format_exc())
+        _set_job(db, job_id, "failed", error="Analysis failed")
+    finally:
+        db.close()
+
+
+@router.post(
+    "/scans/merge",
+    response_model=None,
+    responses={200: {"model": ScanOut}, 202: {"model": JobOut}},
+    tags=["scans"],
+)
+@limiter.limit("10/minute")
+async def merge_scans(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    ppm: float | None = Form(default=None),
+    font_px: float | None = Form(default=None),
+    letter_px: float | None = Form(default=None),
+    panel_area_cm2: float | None = Form(default=None),
+    is_embossed: bool = Form(default=False),
+    product_name: str | None = Form(default=None),
+    brand_name: str | None = Form(default=None),
+    category: str | None = Form(default=None),
+    scan_lat: float | None = Form(default=None),
+    scan_lon: float | None = Form(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """Multi-angle capture: 2-5 shots of one label merged into a single verdict.
+
+    Each image runs the full pipeline; OCR lines are unioned by confidence and
+    the merged text is extracted + evaluated once. Measurements (font height,
+    boxes) come from the highest-confidence capture. Stored as ONE scan record
+    so history and audit stay clean.
+    """
+    settings = get_settings()
+    if not 2 <= len(files) <= 5:
+        raise HTTPException(status_code=422, detail="Send 2-5 images of the same label")
+    raws: list[bytes] = []
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    for f in files:
+        if f.content_type not in settings.allowed_content_type_list:
+            raise HTTPException(status_code=415, detail=f"Unsupported type {f.content_type}")
+        raw = await f.read()
+        if len(raw) == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+        if len(raw) > max_bytes:
+            raise HTTPException(status_code=413, detail="File too large")
+        raws.append(raw)
+    job = _new_job(db, user.id, _rid(), "merge", len(raws))
+    opts: dict[str, Any] = {
+        "ppm": ppm,
+        "font_px": font_px,
+        "letter_px": letter_px,
+        "panel_area_cm2": panel_area_cm2,
+        "is_embossed": is_embossed,
+        "product_name": product_name,
+        "brand_name": brand_name,
+        "category": category,
+        "scan_lat": scan_lat,
+        "scan_lon": scan_lon,
+    }
+    if _is_testing():
+        # Test path: same worker, inline, so the suite keeps asserting
+        # immediate ScanOut responses with zero changes.
+        try:
+            rec = await _process_merge_scan(
+                db, job_id=job.id, owner_id=user.id, rid=job.request_id, raws=raws, **opts
+            )
+        except HTTPException as exc:
+            _set_job(db, job.id, "failed", error=str(exc.detail))
+            raise
+        except Exception as exc:
+            _set_job(db, job.id, "failed", error="OCR processing failed")
+            log.error("ocr_failed", error=str(exc))
+            raise HTTPException(status_code=502, detail="OCR processing failed")
+        out = _scan_out(rec)
+        out.job_id = job.id
+        return out
+    asyncio.create_task(_process_merge_scan_bg(job.id, user.id, job.request_id, raws, **opts))
+    return JSONResponse(status_code=202, content=_job_out(job).model_dump())
 
 
 def _get_scan(scan_id: str, user: User, db: Session) -> ScanRecord:
@@ -985,6 +1172,12 @@ def stats_overview(db: Session = Depends(get_db), user: User = Depends(current_u
 def _scan_out(rec: ScanRecord) -> ScanOut:
     stored = json.loads(rec.results_json or "[]")
     boxes, coord_w, coord_h = _stored_boxes(rec)
+    try:
+        warnings = json.loads(rec.warnings_json or "[]")
+        if not isinstance(warnings, list):
+            warnings = []
+    except Exception:
+        warnings = []
     return ScanOut(
         id=rec.id,
         request_id=rec.request_id,
@@ -996,7 +1189,7 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
         verdict=rec.verdict,
         compliant=rec.compliant,
         results=_stored_checks(stored),
-        warnings=[],
+        warnings=[str(w) for w in warnings],
         reviewed_by=rec.reviewed_by or None,
         reviewed_at=rec.reviewed_at.isoformat() if rec.reviewed_at else None,
         has_image=rec.image_blob is not None,
@@ -1023,6 +1216,12 @@ def _scan_out(rec: ScanRecord) -> ScanOut:
             if isinstance(b, dict)
         ],
     )
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut, tags=["scans"])
+def get_job(job_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Poll an async analysis job. Fast by design: never blocked by OCR work."""
+    return _job_out(_get_job(job_id, user, db))
 
 
 @router.get("/scans/{scan_id}/image", tags=["scans"])

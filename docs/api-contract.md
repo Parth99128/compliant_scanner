@@ -4,8 +4,9 @@
 - `POST /auth/register {username, password, role=officer|admin}` → `{access_token, token_type}` (10/min)
 - `POST /auth/login` → same (20/min)
 - `POST /validate` (DeclarationIn JSON) → `ComplianceOut {compliant, results[{rule_id, passed, message}], warnings[], request_id}`
-- `POST /scans` (multipart `file` + optional form `ppm`, `font_px`, `letter_px`, `panel_area_cm2`, `is_embossed`; Bearer required, 20/min) → `ScanOut {id, request_id, ocr_engine, ocr_text, ocr_confidence, font_height_mm, compliant, results, warnings, boxes[{text,x,y,w,h,confidence}]}`
-- `POST /scans/merge` (multipart `files` ×2–5 of the same label + same optional form fields; Bearer, 10/min) → one `ScanOut`: OCR lines unioned by confidence across angles, extracted + evaluated once, measurements from the best frame, engine tagged `+mergeN`
+- `POST /scans` (multipart `file` + optional form `ppm`, `font_px`, `letter_px`, `panel_area_cm2`, `is_embossed`, `product_name`, `brand_name`, `category`, `scan_lat`, `scan_lon`; Bearer required, 20/min) → `202 JobOut {job_id, status, kind, frames_total}` in production (poll `GET /jobs/{id}` to `done` → `scan_id`); same worker inline with `200 ScanOut` under `TESTING=1`
+- `POST /scans/merge` (multipart `files` ×2–5 + same form fields; Bearer, 10/min) → same 202/job contract; text unioned by confidence, measurements from the best calibrated frame
+- `GET /jobs/{job_id}` (owner/admin) → `JobOut`; async analysis never holds HTTP open (VPNs/proxies can't reap it)
 - `GET /scans` (Bearer; own scans, admin sees all; `?q=&verdict=&status=`) → `ScanSummaryOut[]` (each adds `preview`, `product_name`, `brand_name`, `category`, `has_image`; product auto-filled from extraction, overridable at upload)
 - `PATCH /scans/{id}/product` (owner/admin) `{product_name, brand_name, category}` → `ScanOut`
 - `GET /stats/overview` (Bearer; scoped to role) → `{total, by_verdict, top_failed_rules, by_day, recent}`

@@ -24,6 +24,7 @@ class ScanRecord(Base):
     review_notes: Mapped[str] = mapped_column(Text, default="")
     overrides_json: Mapped[str] = mapped_column(Text, default="[]")
     results_json: Mapped[str] = mapped_column(Text, default="[]")
+    warnings_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     # Downscaled original capture for the scan viewer (nullable: pre-feature rows).
     image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, default=None)
@@ -65,6 +66,27 @@ class ScanImage(Base):
     frame_index: Mapped[int] = mapped_column(default=0)
     image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, default=None)
     image_content_type: Mapped[str] = mapped_column(String(32), default="image/jpeg")
+
+
+class ScanJob(Base):
+    """Async analysis job: uploads return 202 instantly, the verdict arrives later.
+
+    Long multi-angle analyses must not hold an HTTP connection open for
+    minutes — middleboxes (VPN NAT, proxies) reap quiet connections and the
+    client sees a fake 500. The frontend polls GET /jobs/{id} instead.
+    Created by create_all (new table, no ALTER needed).
+    """
+
+    __tablename__ = "scan_jobs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex[:16])
+    owner_id: Mapped[str] = mapped_column(String(32), index=True, default="")
+    request_id: Mapped[str] = mapped_column(String(32), default="")
+    kind: Mapped[str] = mapped_column(String(16), default="scan")  # scan | merge
+    status: Mapped[str] = mapped_column(String(16), default="queued")  # queued|working|done|failed
+    scan_id: Mapped[str] = mapped_column(String(32), default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    frames_total: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class User(Base):

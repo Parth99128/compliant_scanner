@@ -77,6 +77,7 @@ class ScanOut(BaseModel):
     id: str
     request_id: str
     status: str = "pending_review"  # pending_review | final
+    job_id: str | None = None  # async job that produced this scan (null for old rows)
     ocr_engine: str
     ocr_text: str
     ocr_confidence: float = 0.0
@@ -129,6 +130,18 @@ class RegisterIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class JobOut(BaseModel):
+    """Async analysis job: uploads return this instantly (202), verdict later."""
+
+    job_id: str
+    status: str = "queued"  # queued | working | done | failed
+    kind: str = "scan"  # scan | merge
+    frames_total: int = 1
+    scan_id: str | None = None  # set when done
+    error: str = ""  # set when failed
+    request_id: str
 
 
 class ErrorOut(BaseModel):

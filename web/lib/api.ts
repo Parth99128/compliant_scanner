@@ -176,6 +176,38 @@ export function getScan(id: string, token: string): Promise<ScanDetail> {
   return request(`/scans/${id}`, ScanDetailSchema, { method: "GET" }, token);
 }
 
+const JobSchema = z.object({
+  job_id: z.string(),
+  status: z.string().default("queued"),
+  kind: z.string().default("scan"),
+  frames_total: z.number().default(1),
+  scan_id: z.string().nullable().default(null),
+  error: z.string().default(""),
+  request_id: z.string(),
+});
+export type ScanJob = z.infer<typeof JobSchema>;
+
+export function getJob(id: string, token: string): Promise<ScanJob> {
+  return request(`/jobs/${id}`, JobSchema, { method: "GET" }, token);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function pollJob(id: string, token: string): Promise<string> {
+  // Uploads return instantly (202); the verdict arrives minutes later.
+  // Every exchange finishes in milliseconds, so VPNs and proxies cannot
+  // kill the analysis by reaping a long quiet connection.
+  for (let i = 0; i < 180; i++) {
+    const job = await getJob(id, token);
+    if (job.status === "done" && job.scan_id) return job.scan_id;
+    if (job.status === "failed") throw new ApiError(500, job.error || "Analysis failed.");
+    await sleep(2000);
+  }
+  throw new ApiError(408, "Analysis is taking too long — check History later for the result.");
+}
+
 export function listFrames(id: string, token: string): Promise<FrameInfo[]> {
   return request(`/scans/${id}/images`, FrameListSchema, { method: "GET" }, token);
 }
@@ -325,6 +357,16 @@ export async function uploadScan(files: File[], opts: ScanOptions, token: string
     clearSession();
     window.dispatchEvent(new Event("lmpc:unauthorized"));
   }
+  if (res.status === 202) {
+    // Async analysis: upload accepted instantly, verdict polled for.
+    const job = JobSchema.parse(await res.json());
+    return getScan(await pollJob(job.job_id, token), token);
+  }
+  if (res.status === 500)
+    throw new ApiError(
+      500,
+      "Server hiccup while analyzing — your photos are fine. Wait 15 seconds and retry."
+    );
   if (!res.ok) throw new ApiError(res.status, friendlyError(res.status, await res.text()));
   return ScanDetailSchema.parse(await res.json());
 }

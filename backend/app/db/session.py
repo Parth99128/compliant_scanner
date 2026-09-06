@@ -33,6 +33,7 @@ def ensure_columns() -> None:
         "ALTER TABLE scans ADD COLUMN frames_json TEXT DEFAULT '[]'",
         "ALTER TABLE scans ADD COLUMN scan_lat FLOAT",
         "ALTER TABLE scans ADD COLUMN scan_lon FLOAT",
+        "ALTER TABLE scans ADD COLUMN warnings_json TEXT DEFAULT '[]'",
     ]
     with engine.begin() as conn:
         for ddl in alters:
