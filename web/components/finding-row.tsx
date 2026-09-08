@@ -84,7 +84,7 @@ export function FindingRow({
         : "bg-red-100 text-red-800";
 
   return (
-    <div className={cn("rounded-md border bg-white p-3", tone)}>
+    <div className={cn("rounded-xl border bg-white p-4 shadow-sm", tone)}>
       <div className="flex flex-wrap items-center gap-1.5">
         <span
           className={cn("grid h-6 w-6 flex-none place-items-center rounded-full text-xs font-black", glyphTone)}

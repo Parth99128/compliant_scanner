@@ -271,6 +271,13 @@ export function statsOverview(token: string): Promise<StatsOverview> {
   return request("/stats/overview", StatsSchema, { method: "GET" }, token);
 }
 
+const HealthSchema = z.object({ status: z.string(), request_id: z.string().default("") });
+export type Health = z.infer<typeof HealthSchema>;
+
+export function healthCheck(): Promise<Health> {
+  return request("/health", HealthSchema, { method: "GET" });
+}
+
 export function updateProduct(
   id: string,
   token: string,

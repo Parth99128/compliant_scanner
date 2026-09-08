@@ -10,15 +10,10 @@ import { FindingRow, EDITABLE_RULES } from "@/components/finding-row";
 import { AlertDestructive } from "@/components/ui/alert";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Hero, Panel } from "@/components/ui/ministry";
 import { useToast } from "@/components/ui/toaster";
 import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateFields, updateProduct, type Check, type FieldCorrections, type FrameInfo, type ScanDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-function verdictClasses(v: string): string {
-  if (v === "COMPLIANT") return "border-green-300 bg-green-50";
-  if (v === "INCOMPLETE") return "border-amber-300 bg-amber-50";
-  return "border-red-300 bg-red-50";
-}
 
 function verdictTitle(v: string): string {
   if (v === "COMPLIANT") return "Compliant";
@@ -34,9 +29,9 @@ function RuleCard({ check }: { check: Check }): React.JSX.Element {
         ? "border-amber-300 bg-amber-50/60"
         : "border-red-300 bg-red-50/50";
   return (
-    <div className={cn("rounded-md border bg-white p-3", tone)}>
+    <div className={cn("rounded-xl border bg-white p-4 shadow-sm", tone)}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <code className="text-xs font-bold">{check.rule_id}</code>
+        <code className="rounded bg-navy-50 px-1.5 py-0.5 text-xs font-bold text-navy-900">{check.rule_id}</code>
         {check.status === "PASS" ? (
           <Badge tone="green">Pass</Badge>
         ) : check.status === "NOT_ASSESSABLE" ? (
@@ -496,18 +491,26 @@ export default function ScanDetailPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    <div className="animate-rise flex flex-col gap-4">
       <p className="text-xs text-slate-500">
-        <Link href="/scans" className="hover:underline">Scan history</Link> / <code>{d.id}</code>
+        <Link href="/scans" className="font-semibold text-navy-800 hover:underline">Scan history</Link>
+        <span className="mx-1.5 text-slate-300">/</span>
+        <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[11px] text-navy-900">{d.id}</code>
       </p>
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        <h1 className="font-display text-xl font-black text-navy-950">Scan detail</h1>
-        <VerdictBadge verdict={d.verdict} />
-        <Badge tone={d.status === "final" ? "blue" : "slate"}>{d.status === "final" ? "Final" : "Pending review"}</Badge>
-      </div>
+      <Hero
+        kicker={d.status === "final" ? "Final record" : "Pending review"}
+        kickerHi="निरीक्षण विवरण"
+        title={d.product_name || "Scan detail"}
+        description={`${d.brand_name ? `${d.brand_name} · ` : ""}${d.category || "Uncategorised"} · Scan ${d.id.slice(0, 8)}`}
+        tone={d.verdict === "COMPLIANT" ? "green" : d.verdict === "NON_COMPLIANT" ? "red" : "amber"}
+        actions={<VerdictBadge verdict={d.verdict} />}
+        meta={
+          <Badge tone={d.status === "final" ? "blue" : "slate"}>{d.status === "final" ? "Final" : "Pending review"}</Badge>
+        }
+      />
 
-      <div className={cn("mt-4 rounded-md border p-4", verdictClasses(d.verdict))}>
-        <p className="text-base font-bold">{verdictTitle(d.verdict)}</p>
+      <div className="rounded-xl border-l-4 border-navy-800 bg-white px-5 py-4 shadow-sm">
+        <p className="font-display text-base font-black text-navy-950">{verdictTitle(d.verdict)}</p>
         <p className="mt-0.5 text-[13px] text-slate-600">
           {d.verdict === "COMPLIANT" && "All assessable declarations passed. No blocking violations."}
           {d.verdict === "NON_COMPLIANT" && "One or more mandatory declarations failed or are missing."}
@@ -536,23 +539,23 @@ export default function ScanDetailPage(): React.JSX.Element {
         </div>
 
         <div className="flex flex-col gap-4 xl:col-span-2">
-          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold">Product identity</h2>
-              {!editingProduct && (
-                <button
-                  className="text-xs font-bold text-slate-700 hover:underline"
-                  onClick={() => {
-                    setPName(d.product_name);
-                    setPBrand(d.brand_name);
-                    setPCat(d.category);
-                    setEditingProduct(true);
-                  }}
-                >
-                  Edit
-                </button>
-              )}
-            </div>
+          <Panel
+            title="Product identity"
+            description="Auto-filled from the label at scan time; officers can correct it here."
+            actions={!editingProduct ? (
+              <button
+                className="text-xs font-bold text-navy-800 hover:underline"
+                onClick={() => {
+                  setPName(d.product_name);
+                  setPBrand(d.brand_name);
+                  setPCat(d.category);
+                  setEditingProduct(true);
+                }}
+              >
+                Edit
+              </button>
+            ) : undefined}
+          >
             {!editingProduct ? (
               <dl className="mt-2 grid grid-cols-[110px_1fr] gap-x-2 gap-y-1 text-[13px]">
                 <dt className="text-slate-500">Product</dt>
@@ -578,10 +581,8 @@ export default function ScanDetailPage(): React.JSX.Element {
                 </div>
               </div>
             )}
-            <p className="mt-2 text-[11px] text-slate-500">Auto-filled from the label at scan time; officers can correct it here.</p>
-          </div>
-          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-bold">OCR reading</h2>
+          </Panel>
+          <Panel title="OCR reading">
             <dl className="mt-2 grid grid-cols-[110px_1fr] gap-x-2 gap-y-1 text-[13px]">
               <dt className="text-slate-500">Engine</dt>
               <dd className="font-semibold"><code className="text-xs">{d.ocr_engine}</code></dd>
@@ -614,11 +615,10 @@ export default function ScanDetailPage(): React.JSX.Element {
             <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowOcr((v) => !v)}>
               {showOcr ? "Hide OCR text" : "Show OCR text"}
             </Button>
-            {showOcr && <p className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-2 text-xs text-slate-600">{d.ocr_text || "(no text extracted)"}</p>}
-          </div>
+            {showOcr && <p className="mt-2 whitespace-pre-wrap rounded-lg border border-slate-100 bg-navy-50/60 p-3 text-xs text-slate-600">{d.ocr_text || "(no text extracted)"}</p>}
+          </Panel>
 
-          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-bold">Officer review</h2>
+          <Panel title="Officer review">
             <p className="mb-2 text-xs text-slate-500">
               {d.status === "final" ? `Finalized${d.reviewed_by ? ` by ${d.reviewed_by}` : ""}.` : "Pending review — reports unlock after finalizing."}
             </p>
@@ -638,19 +638,18 @@ export default function ScanDetailPage(): React.JSX.Element {
                 </div>
               </>
             ) : (
-              <p className="rounded border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900">
+              <p className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-xs font-semibold text-green-900">
                 Finalized{reviewedNote(d)}. The report below is the exportable record.
               </p>
             )}
-          </div>
+          </Panel>
 
-          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-bold">Report and explanation</h2>
-            <p className="mb-2 text-xs text-slate-500">
-              {d.status === "final"
-                ? "Printable PDF with Rule 7 tables, findings and audit trail."
-                : "PDF unlocks after review; explanation needs a server-side key."}
-            </p>
+          <Panel
+            title="Report and explanation"
+            description={d.status === "final"
+              ? "Printable PDF with Rule 7 tables, findings and audit trail."
+              : "PDF unlocks after review; explanation needs a server-side key."}
+          >
             <div className="flex flex-wrap gap-2">
               <Button size="sm" disabled={busy !== null} onClick={downloadPdf}>
                 {busy === "pdf" ? "Working…" : "Download PDF"}
@@ -659,25 +658,26 @@ export default function ScanDetailPage(): React.JSX.Element {
                 {busy === "explain" ? "Working…" : "AI explanation"}
               </Button>
             </div>
-            {explanation && <p className="mt-2 whitespace-pre-wrap rounded border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-900">{explanation}</p>}
-          </div>
+            {explanation && <p className="mt-2 whitespace-pre-wrap rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs text-sky-900">{explanation}</p>}
+          </Panel>
 
-          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 pb-3 pt-4">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Rule 6 · Mandatory declarations</p>
-                <h2 className="font-display text-base font-black text-navy-950">Extracted declarations</h2>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Rule 6 · Mandatory declarations</p>
+                <h2 className="font-display text-[17px] font-black tracking-tight text-navy-950">Extracted declarations</h2>
               </div>
               {!editingFields && (
                 <button
-                  className="flex-none text-xs font-bold text-slate-700 hover:underline"
+                  className="flex-none rounded-lg border border-navy-100 bg-navy-50 px-3 py-1.5 text-xs font-bold text-navy-900 hover:bg-navy-100"
                   onClick={openFieldEditor}
                 >
                   Correct values
                 </button>
               )}
             </div>
-            <p className="mb-3 mt-1 text-xs text-slate-500">Correct a mis-read value or mark a declaration present. Amber cards need measurement — never passes.</p>
+            <div className="px-5 pb-4">
+            <p className="mb-3 text-xs text-slate-500">Correct a mis-read value or mark a declaration present. Amber cards need measurement — never passes.</p>
             {editingFields ? (
               <div className="mb-3 rounded-md border border-sky-300 bg-sky-50/50 p-3">
                 <p className="mb-2 text-xs font-semibold text-sky-900">
@@ -780,6 +780,7 @@ export default function ScanDetailPage(): React.JSX.Element {
                 ))}
             </div>
             )}
+            </div>
           </div>
         </div>
       </div>

@@ -10,7 +10,8 @@ from app.services.rule_engine import ProductDeclaration
 
 MRP_RE = re.compile(
     r"(?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
-    r"\s*(?:Rs\.?|INR|₹|%)?\s*[:\-]?\s*(?:Rs\.?|INR|₹|%)?\s*([\d,]+(?:\.\d{1,2})?)",
+    r"[\s()\-–—]{0,8}(?:Rs\.?|INR|₹|%)?[\s()\-–—]{0,8}:?\s*(?:Rs\.?|INR|₹|%)?\s*"
+    r"([\d,]+(?:\.\d{1,2})?)",
     re.IGNORECASE,
 )
 INCL_TAXES_RE = re.compile(r"incl.*?o[ft]\W*all\W*tax", re.IGNORECASE)
@@ -64,9 +65,10 @@ _ADDRESS_WORD_RE = re.compile(
     re.IGNORECASE,
 )
 _PIN_RE = re.compile(r"\b\d{6}\b")
-# Storage/safety instructions are never the product name ("STORE IN A COOL...").
+# Lot/batch/use-by lines are admin data, never the product name ("Lot No: F OH1").
 _GENERIC_SKIP_RE = re.compile(
-    r"\b(store|storage|dispose|litter|recycle|recycling|keep|dry place|do not|conserver)\b",
+    r"\b(store|storage|dispose|litter|recycle|recycling|keep|dry place|do not|conserver"
+    r"|lot|batch|use\s*by|best\s*before)\b",
     re.IGNORECASE,
 )
 # Nutrition context: values here are serving facts, never the net quantity or
@@ -114,12 +116,37 @@ _MONTHS_FULL = (
     "December",
 )
 
+# Unit-sale-price and lot cues: a standalone amount line carrying these is
+# NEVER the MRP (multi-line MRP must skip it).
+_MRP_POISON_RE = re.compile(r"\b(usp|unit\s*(sale\s*)?price|per\s*g\b|lot|batch)\b", re.IGNORECASE)
+_MRP_LINE_AMT_RE = re.compile(r"^\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:/-\s*)?$")
+_MRP_KEYWORD_RE = re.compile(r"MRP|M\.?R\.?P\.?|maximum\s*retail\s*price", re.IGNORECASE)
+
+
+def _multiline_mrp(lines: list[str]) -> float | None:
+    """MRP keyword on one line, amount alone on a following line ("MRP Rs." /
+    "Rs. 50.00"). Poisoned lines (USP, lot, batch) never count."""
+    for i, ln in enumerate(lines):
+        if not _MRP_KEYWORD_RE.search(ln):
+            continue
+        if re.search(r"[\d,]+\.\d|\b\d{2,}\b", ln):
+            continue  # amount already on the keyword line: single-line handles it
+        for nxt in lines[i + 1 : i + 3]:
+            if not nxt.strip() or _MRP_POISON_RE.search(nxt):
+                continue
+            m = _MRP_LINE_AMT_RE.match(nxt)
+            if m:
+                return _norm_num(m.group(1))
+    return None
+
+
 # OCR glyph confusions, applied ONLY inside tightly-anchored contexts
 # (amount after MRP, digit runs in dates) — never to free text.
 _DIGIT_FIX_TABLE = str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1", "S": "5", "s": "5", "B": "8"})
 _MRP_AMT_RE = re.compile(
     r"((?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
-    r"\s*(?:Rs\.?|INR|₹|%)?\s*[:\-]?\s*(?:Rs\.?|INR|₹|%)?\s*)([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
+    r"[\s()\-–—]{0,8}(?:Rs\.?|INR|₹|%)?[\s()\-–—]{0,8}:?\s*(?:Rs\.?|INR|₹|%)?\s*)"
+    r"([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
     re.IGNORECASE,
 )
 _DATE_TOKEN_RE = re.compile(r"\b([\dIlO]{1,2})[/\-.]([\dIlO]{1,2})[/\-.]([\dIlO]{2,4})\b")
@@ -237,6 +264,23 @@ def _parse_date(s: str) -> date | None:
                 return datetime.strptime(cand, fmt).date()  # noqa: DTZ007
             except ValueError:
                 continue
+    # Last resort: certain month+year with a mangled day ("0/08/2026" — OCR
+    # dropped a digit). Rule 6(1)(d) needs only month and year: day defaults
+    # to the 1st rather than losing the declaration. 2-digit years follow
+    # strptime %y (00-68 -> 2000s, 69-99 -> 1900s).
+    m = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})", s)
+    if m:
+        try:
+            mon, yr = int(m.group(2)), int(m.group(3))
+        except ValueError:
+            return None
+        if yr < 100:
+            yr += 2000 if yr <= 68 else 1900
+        if 1 <= mon <= 12 and yr >= 1900:
+            try:
+                return date(yr, mon, 1)
+            except ValueError:
+                return None
     return None
 
 
@@ -313,6 +357,15 @@ def _looks_like_measurement(ln: str) -> bool:
     return sum(c.isalpha() for c in s) <= 2
 
 
+def _dedupe_segments(parts: list[str]) -> list[str]:
+    """Drop consecutive duplicate address segments (OCR repeats lines)."""
+    out: list[str] = []
+    for p in parts:
+        if not out or out[-1] != p:
+            out.append(p)
+    return out
+
+
 def _extract_manufacturer(lines: list[str]) -> tuple[str | None, str | None]:
     """Anchor-led maker block, else address-word lines (pin needs a companion
     word — bare 6-digit runs are barcodes)."""
@@ -324,8 +377,10 @@ def _extract_manufacturer(lines: list[str]) -> tuple[str | None, str | None]:
         m = _MFR_ANCHOR_RE.search(ln)
         if not m:
             continue
+        if re.search(r"\bas\s+per\s*$", ln[: m.start()], re.IGNORECASE):
+            continue  # "Address as per Regd. Office" points elsewhere, not a declaration
         tail = ln[m.end() :].strip(" :-\t")
-        block = ([tail] if tail else []) + [x.strip() for x in lines[i + 1 : i + 4] if x.strip()]
+        block = ([tail] if tail else []) + [x.strip() for x in lines[i + 1 : i + 5] if x.strip()]
         kept: list[str] = []
         for b in block:
             if kept and stop.search(b):
@@ -333,11 +388,11 @@ def _extract_manufacturer(lines: list[str]) -> tuple[str | None, str | None]:
             kept.append(b)
         if kept and kept[0]:
             name = kept[0][:160]
-            addr = "; ".join(kept[1:3])[:300] or None
+            addr = "; ".join(b.rstrip(" ,;:-").strip() for b in _dedupe_segments(kept[1:4]))[:300] or None
             return name, addr
     addr_lines = [ln for ln in lines if _ADDRESS_WORD_RE.search(ln)]
     mfr_name = addr_lines[0][:160] if addr_lines else None
-    mfr_addr = "; ".join(addr_lines[:2])[:300] if addr_lines else None
+    mfr_addr = "; ".join(_dedupe_segments(addr_lines[:2]))[:300] if addr_lines else None
     return mfr_name, mfr_addr
 
 
@@ -386,11 +441,20 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
         patch: dict = {}
         if decl.mrp is None and "MRP" in vals:
             # The NER model fires on bare small numbers ("5 PP" recycling mark):
-            # require a price cue inside the entity itself.
+            # require a price cue inside the entity — or on its line, for forms
+            # like "MRP (Rs.): 14.00" where the entity is just the amount.
+            # (A lone glyph-noise cue like an OCR-hallucinated Rs. never counts.)
             ent = vals["MRP"]
             m = re.search(r"[\d,]+(?:\.\d{1,2})?", ent)
             v = _norm_num(m.group(0)) if m else None
-            if v and re.search(r"(rs|inr|₹|mrp|price)", ent, re.IGNORECASE):
+            line = next((ln for ln in text.splitlines() if ent and ent in ln), "")
+            if v and (
+                re.search(r"(rs|inr|₹|mrp|price)", ent, re.IGNORECASE)
+                or (
+                    re.search(r"(mrp|price|\brs\b|inclusive)", line, re.IGNORECASE)
+                    and not _MRP_POISON_RE.search(line)
+                )
+            ):
                 patch["mrp"] = v
         if (decl.net_quantity_value is None or not decl.net_quantity_unit) and "NET_QTY" in vals:
             m = re.search(
@@ -452,6 +516,8 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
     m = MRP_RE.search(text)
     mrp_val = _norm_num(m.group(1)) if m else None
     if mrp_val is None:
+        mrp_val = _multiline_mrp(text.splitlines())
+    if mrp_val is None:
         for mr in _MRP_RUPEE_RE.finditer(text):
             win = text[max(0, mr.start() - 40) : mr.end() + 10]
             if _MRP_RUPEE_CUE_RE.search(win):
@@ -470,6 +536,17 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
     exp: date | None = None
     if exp_raw:
         exp = _parse_date(exp_raw)  # relative durations ("12 months") -> left None (needs mfg anchor)
+    if exp is not None and mfg is not None and exp <= mfg and m:
+        # The anchor grabbed the mfg date on a paired row ("Mfg X, Exp Y"):
+        # take a later date from the SAME line as the true expiry.
+        ln = text.splitlines()[text.count("\n", 0, m.start())]
+        for cand in re.findall(
+            r"\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{1,2}[/\-]\d{2,4}", ln
+        ):
+            d = _parse_date(cand)
+            if d is not None and d > mfg:
+                exp = d
+                break
     if mfg is None or exp is None:
         # Keyword anchor OCR-mangled (e.g. "Mtg"/"Expr") or dropped: fall back to
         # bare 4-digit-year dates in reading order — first = mfg, second = expiry.
@@ -538,6 +615,7 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             or CARE_RE.search(ln)
             or ORIGIN_RE.search(ln)
             or INCL_TAXES_RE.search(ln)
+            or _MFR_ANCHOR_RE.search(ln)
         )
 
     generic = next(
@@ -579,6 +657,9 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
     # Gazetteer canonicalization (deterministic, offline): repair a mangled
     # maker name ("Hindustan Uniiever" -> "Hindustan Unilever") or fill a
     # missing one from OCR lines. Names only — never numbers/dates/MRP.
+    # Fidelity guard: never rewrite an exact read — if the extracted name
+    # already contains the canonical hit ("Patanjali Foods Limited" contains
+    # "Patanjali Foods"), the OCR was right and the gazetteer stays out.
     # Never raises; the raw OCR text stays on the scan for audit.
     try:
         import dataclasses as _dc
@@ -587,7 +668,7 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
 
         if decl.manufacturer_name:
             fixed, _score = fix_manufacturer(decl.manufacturer_name)
-            if fixed:
+            if fixed and fixed.lower() not in decl.manufacturer_name.lower():
                 decl = _dc.replace(decl, manufacturer_name=fixed)
         else:
             found, _score = fill_manufacturer(text)

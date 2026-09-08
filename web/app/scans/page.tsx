@@ -6,10 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
-import { NewScanButton, PageHeader } from "@/components/page-header";
+import { NewScanButton } from "@/components/page-header";
 import { ScanThumb } from "@/components/scan-thumb";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState, Hero, Icon, Panel, inputCls } from "@/components/ui/ministry";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listScans, type ScanSummary } from "@/lib/api";
 
@@ -104,94 +105,108 @@ function HistoryInner(): React.JSX.Element {
   if (!mounted || !ready || !session) return <p className="text-sm text-slate-500">Loading…</p>;
 
   return (
-    <div className="animate-rise">
-      <PageHeader
+    <div className="animate-rise flex flex-col gap-4">
+      <Hero
+        kicker="Repository"
+        kickerHi="भंडार"
         title="Product repository"
         description="Every scan your account has run, searchable and filterable."
         actions={<NewScanButton />}
+        meta={
+          <span className="flex items-center gap-1.5" aria-live="polite">
+            <Icon name="db" size={14} />
+            {scans.isFetching ? "Filtering… " : ""}
+            {sorted.length} of {scans.data?.length ?? 0} records
+          </span>
+        }
       />
-      <div className="mb-3 mt-4 flex flex-wrap items-center gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search products, brands, label text…"
-          aria-label="Search repository"
-          className="min-w-56 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm sm:max-w-xs sm:flex-none"
-        />
-        {(["all", "COMPLIANT", "NON_COMPLIANT", "INCOMPLETE"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => {
-              setVerdict(v);
-              setPage(0);
-            }}
-            aria-pressed={verdict === v}
-            className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-              verdict === v ? "border-navy-900 bg-navy-900 text-white" : "border-slate-300 bg-white text-slate-600"
-            }`}
-          >
-            {v === "all" ? "All" : v.charAt(0) + v.slice(1).toLowerCase().replace("_", "-")}
-          </button>
-        ))}
-        <span className="hidden h-5 w-px bg-slate-300 sm:block" aria-hidden="true" />
-        {(["all", "pending_review", "final"] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => {
-              setStatus(s);
-              setPage(0);
-            }}
-            aria-pressed={status === s}
-            className={`rounded-full border px-3 py-1.5 text-xs font-bold ${
-              status === s ? "border-saffron-600 bg-saffron-500 text-navy-950" : "border-slate-300 bg-white text-slate-600"
-            }`}
-          >
-            {s === "all" ? "Any review" : s === "final" ? "Final" : "Pending review"}
-          </button>
-        ))}
-        <span className="ml-auto text-xs text-slate-500" aria-live="polite">
-          {scans.isFetching ? "Filtering… " : ""}
-          {sorted.length} of {scans.data?.length ?? 0} records
-        </span>
-      </div>
+      <Panel>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-56 flex-1 sm:max-w-xs sm:flex-none">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Icon name="search" size={16} />
+            </span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search products, brands, label text…"
+              aria-label="Search repository"
+              className={`${inputCls} pl-9`}
+            />
+          </div>
+          <span className="hidden h-5 w-px bg-slate-200 sm:block" aria-hidden="true" />
+          {(["all", "COMPLIANT", "NON_COMPLIANT", "INCOMPLETE"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => {
+                setVerdict(v);
+                setPage(0);
+              }}
+              aria-pressed={verdict === v}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                verdict === v ? "border-navy-900 bg-navy-900 text-white shadow-sm" : "border-slate-300 bg-white text-slate-600 hover:border-navy-300"
+              }`}
+            >
+              {v === "all" ? "All" : v.charAt(0) + v.slice(1).toLowerCase().replace("_", "-")}
+            </button>
+          ))}
+          <span className="hidden h-5 w-px bg-slate-200 sm:block" aria-hidden="true" />
+          {(["all", "pending_review", "final"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                setStatus(s);
+                setPage(0);
+              }}
+              aria-pressed={status === s}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                status === s ? "border-saffron-600 bg-saffron-500 text-navy-950 shadow-sm" : "border-slate-300 bg-white text-slate-600 hover:border-saffron-400"
+              }`}
+            >
+              {s === "all" ? "Any review" : s === "final" ? "Final" : "Pending review"}
+            </button>
+          ))}
+        </div>
+      </Panel>
       {scans.isError && (
         <p className="mb-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
           Could not load the repository. Check that the backend is running.
         </p>
       )}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Photo</TableHead>
-            <TableHead>
-              <button className="font-bold uppercase" onClick={() => toggleSort("created_at")}>
-                Date {sortArrow("created_at")}
-              </button>
-            </TableHead>
-            <TableHead>Product</TableHead>
-            <TableHead>
-              <button className="font-bold uppercase" onClick={() => toggleSort("verdict")}>
-                Status {sortArrow("verdict")}
-              </button>
-            </TableHead>
-            <TableHead>Review</TableHead>
-            <TableHead>
-              <button className="font-bold uppercase" onClick={() => toggleSort("ocr_engine")}>
-                Engine {sortArrow("ocr_engine")}
-              </button>
-            </TableHead>
-            <TableHead></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {pageRows.length === 0 ? (
+      <Panel>
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={7} className="py-10 text-center">
-                <p className="font-bold text-slate-700">No records match</p>
-                <p className="text-xs text-slate-500">Try a different search, or run a scan from the Scan tab.</p>
-              </TableCell>
+              <TableHead>Photo</TableHead>
+              <TableHead>
+                <button className="font-bold uppercase" onClick={() => toggleSort("created_at")}>
+                  Date {sortArrow("created_at")}
+                </button>
+              </TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>
+                <button className="font-bold uppercase" onClick={() => toggleSort("verdict")}>
+                  Status {sortArrow("verdict")}
+                </button>
+              </TableHead>
+              <TableHead>Review</TableHead>
+              <TableHead>
+                <button className="font-bold uppercase" onClick={() => toggleSort("ocr_engine")}>
+                  Engine {sortArrow("ocr_engine")}
+                </button>
+              </TableHead>
+              <TableHead></TableHead>
             </TableRow>
-          ) : (
+          </TableHeader>
+          <TableBody>
+            {pageRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <EmptyState icon="search" title="No records match"
+                    body="Try a different search, or run a scan from the Scan tab." />
+                </TableCell>
+              </TableRow>
+            ) : (
             pageRows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell>
@@ -240,13 +255,14 @@ function HistoryInner(): React.JSX.Element {
           )}
         </TableBody>
       </Table>
-      <div className="mt-3 flex items-center gap-2 text-sm">
+      </Panel>
+      <div className="flex items-center gap-2 text-sm">
+        <span className="mr-auto text-xs text-slate-500">
+          Page {safePage + 1} of {pageCount} · {sorted.length} records
+        </span>
         <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}>
           Previous
         </Button>
-        <span className="text-xs text-slate-500">
-          Page {safePage + 1} of {pageCount}
-        </span>
         <Button
           variant="outline"
           size="sm"

@@ -74,3 +74,71 @@ def test_rupee_needs_price_cue():
     assert extract_fields("Fromage sucré \u20b9100 pour").mrp is None
     d = extract_fields("MRP \u20b9 120 inclusive of all taxes")
     assert d.mrp == 120.0 and d.mrp_includes_taxes
+
+
+def test_mrp_parens_form():
+    d = extract_fields("MRP (\u20b9): 14.00 (incl. of all taxes)")
+    assert d.mrp == 14.0
+
+
+def test_mrp_multiline_amount_next_line():
+    d = extract_fields("MRP Rs.\nRs. 50.00\nUSP Rs. 1.00/g")
+    assert d.mrp == 50.0
+
+
+def test_mrp_multiline_poison_line_never_counts():
+    d = extract_fields("MRP Rs.\nUSP Rs. 1.00/g")
+    assert d.mrp is None
+
+
+def test_exp_takes_later_date_on_paired_row():
+    d = extract_fields("Mfg. Date, Best Before: 15/05/2024, 15/02/2025")
+    assert d.mfg_date is not None and (d.mfg_date.year, d.mfg_date.month) == (2024, 5)
+    assert d.expiry_date is not None and (d.expiry_date.year, d.expiry_date.month) == (2025, 2)
+
+
+def test_genuine_bad_dates_still_detected():
+    d = extract_fields("Mfg: 01/01/2025\nExp: 01/01/2024")
+    assert d.mfg_date is not None and d.expiry_date is not None
+    assert d.expiry_date <= d.mfg_date  # rule engine must still FAIL this
+
+
+def test_mangled_day_falls_back_to_month():
+    d = extract_fields("Packed On: 0/08/2026")
+    assert d.mfg_date is not None and (d.mfg_date.year, d.mfg_date.month) == (2026, 8)
+
+
+def test_generic_skips_lot_line():
+    assert extract_fields("Lot No: F OH1").generic_name is None
+
+
+def test_maker_block_keeps_full_address():
+    d = extract_fields(
+        "MARKETED BY:\nPatanjali Foods Limited\n"
+        "Regd. Office: 616, Tulsiani Chambers, Nariman Point,\n"
+        "Mumbai - 400021, Maharashtra\nLic. No.: 10015022004287"
+    )
+    assert d.manufacturer_name == "Patanjali Foods Limited"
+    assert d.manufacturer_address and "400021" in d.manufacturer_address
+
+
+def test_maker_ignores_as_per_reference():
+    d = extract_fields(
+        "Address as per Regd. Office, Toll Free No.: 18001804409,\n"
+        "MARKETED BY:\nPatanjali Foods Limited\n"
+        "Regd. Office: 616, Tulsiani Chambers, Nariman Point,\n"
+        "Mumbai - 400021, Maharashtra"
+    )
+    assert d.manufacturer_name == "Patanjali Foods Limited"
+    assert d.manufacturer_address and "400021" in d.manufacturer_address
+    assert "Toll Free" not in (d.manufacturer_name or "")
+
+
+def test_gazetteer_never_rewrites_exact_read():
+    d = extract_fields("Mfd by Patanjali Foods Limited, Plot 1, Mumbai 400001")
+    assert d.manufacturer_name == "Patanjali Foods Limited, Plot 1, Mumbai 400001"
+
+
+def test_gazetteer_still_repairs_typos():
+    d = extract_fields("Mfd by Hindustan Uniiever, Plot 1, Mumbai 400001")
+    assert d.manufacturer_name and "Unilever" in d.manufacturer_name

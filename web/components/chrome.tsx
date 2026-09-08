@@ -5,62 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
+import { GovStrip, Icon } from "@/components/ui/ministry";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  {
-    href: "/",
-    label: "Home",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
-        <path d="M3 10.5 10 3.5l7 7" />
-        <path d="M5 9.5V16.5h10V9.5" />
-      </svg>
-    ),
-  },
-  {
-    href: "/scan",
-    label: "Scan",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
-        <rect x="2.5" y="5.5" width="15" height="11" rx="2" />
-        <circle cx="10" cy="11" r="3" />
-        <path d="M7 5.5 8 3.5h4l1 2" />
-      </svg>
-    ),
-  },
-  {
-    href: "/scans",
-    label: "History",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
-        <path d="M6.5 5h11M6.5 10h11M6.5 15h11" />
-        <circle cx="3.5" cy="5" r="0.9" fill="currentColor" stroke="none" />
-        <circle cx="3.5" cy="10" r="0.9" fill="currentColor" stroke="none" />
-        <circle cx="3.5" cy="15" r="0.9" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
-    href: "/reports",
-    label: "Reports",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
-        <path d="M5 2.5h6l4 4v11H5z" />
-        <path d="M11 2.5V6.5h4M8 10.5h5M8 13.5h5" />
-      </svg>
-    ),
-  },
-  {
-    href: "/settings",
-    label: "More",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
-        <circle cx="10" cy="10" r="2.6" />
-        <path d="M10 2.5v2.4M10 15.1v2.4M2.5 10h2.4M15.1 10h2.4M4.7 4.7l1.7 1.7M13.6 13.6l1.7 1.7M15.3 4.7l-1.7 1.7M6.4 13.6l-1.7 1.7" />
-      </svg>
-    ),
-  },
+const NAV: { href: string; label: string; icon: "home" | "camera" | "list" | "file" | "gear" }[] = [
+  { href: "/", label: "Home", icon: "home" },
+  { href: "/scan", label: "Scan", icon: "camera" },
+  { href: "/scans", label: "History", icon: "list" },
+  { href: "/reports", label: "Reports", icon: "file" },
+  { href: "/settings", label: "More", icon: "gear" },
 ];
 
 const PUBLIC_NAV = [
@@ -70,14 +23,17 @@ const PUBLIC_NAV = [
   { href: "#faq", label: "FAQ" },
 ];
 
-function Emblem(): React.JSX.Element {
+function Emblem({ size = "h-10 w-10" }: { size?: string }): React.JSX.Element {
   return (
     // Logo artwork: circular crop keeps the scanner-D mark, wordmark below it is cropped out.
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src="/drishti-logo.jpg"
       alt="DrishtiLM logo"
-      className="h-10 w-10 flex-none rounded-full border-2 border-gold object-cover object-[50%_36%] shadow-[0_0_12px_rgba(246,139,31,0.45)]"
+      className={cn(
+        size,
+        "flex-none rounded-full border-2 border-gold object-cover object-[50%_36%] shadow-[0_0_12px_rgba(246,139,31,0.45)]"
+      )}
     />
   );
 }
@@ -85,7 +41,7 @@ function Emblem(): React.JSX.Element {
 function Wordmark({ compact = false }: { compact?: boolean }): React.JSX.Element {
   return (
     <span className="leading-tight">
-      <span className={`block font-display font-black tracking-tight text-white ${compact ? "text-[15px]" : "text-[17px]"}`}>
+      <span className={cn("block font-display font-black tracking-tight text-white", compact ? "text-[15px]" : "text-[17px]")}>
         Drishti<span className="bg-gradient-to-r from-sky-400 to-green-400 bg-clip-text text-transparent">LM</span>
       </span>
       <span className="block text-[10px] font-semibold tracking-wide text-slate-300">
@@ -93,6 +49,10 @@ function Wordmark({ compact = false }: { compact?: boolean }): React.JSX.Element
       </span>
     </span>
   );
+}
+
+function isActive(pathname: string, href: string): boolean {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function Chrome({ children }: { children: React.ReactNode }): React.JSX.Element {
@@ -110,30 +70,39 @@ export function Chrome({ children }: { children: React.ReactNode }): React.JSX.E
       >
         Skip to main content
       </a>
-      <div className="tricolor-bar h-1.5" aria-hidden="true" />
-      <header className="sticky top-0 z-40 border-b border-navy-950 bg-navy-900 text-white shadow-md">
-        <div className="mx-auto flex min-h-16 max-w-6xl items-center gap-3 px-4 py-2">
+      <GovStrip />
+      <header className="sticky top-0 z-40 bg-navy-900 text-white shadow-[0_2px_12px_rgba(7,28,51,0.45)]">
+        <div className="mx-auto flex min-h-16 max-w-6xl items-center gap-3 px-4 py-2 md:px-7">
           <Link href="/" className="flex items-center gap-2.5" aria-label="DrishtiLM home">
             <Emblem />
-            <Wordmark />
+            <span>
+              <Wordmark />
+              <span className="mt-0.5 hidden border-l-2 border-gold pl-2 text-[10px] font-bold uppercase tracking-[0.16em] text-gold sm:block">
+                Field Console
+              </span>
+            </span>
           </Link>
 
           {mounted && session ? (
             <>
               <nav className="ml-6 hidden items-center gap-1 md:flex" aria-label="Primary">
-                {NAV.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={pathname === item.href ? "page" : undefined}
-                    className={cn(
-                      "rounded-md px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white",
-                      pathname === item.href && "bg-white/15 text-white shadow-[inset_0_-3px_0_0_var(--color-saffron-500)]"
-                    )}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+                {NAV.map((item) => {
+                  const active = isActive(pathname, item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
+                        active ? "bg-white/15 text-white shadow-[inset_0_-3px_0_0_var(--color-gold)]" : "text-slate-300 hover:bg-white/10 hover:text-white"
+                      )}
+                    >
+                      <Icon name={item.icon} size={16} />
+                      {item.label}
+                    </Link>
+                  );
+                })}
               </nav>
               <div className="ml-auto flex items-center gap-2">
                 <form
@@ -143,19 +112,33 @@ export function Chrome({ children }: { children: React.ReactNode }): React.JSX.E
                     router.push(`/scans?q=${encodeURIComponent(query)}`);
                   }}
                 >
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search products, brands…"
-                    aria-label="Search scans"
-                    className="w-52 rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-[13px] text-white placeholder:text-slate-400 focus:border-saffron-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                      <Icon name="search" size={14} />
+                    </span>
+                    <input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search products, brands…"
+                      aria-label="Search scans"
+                      className="w-52 rounded-lg border border-white/20 bg-white/10 py-1.5 pl-8 pr-3 text-[13px] text-white placeholder:text-slate-400 focus:border-gold focus:outline-none"
+                    />
+                  </div>
                 </form>
-                <span className="hidden max-w-32 truncate text-[13px] font-semibold text-slate-200 sm:block">
-                  {session.username}
+                <span className="hidden items-center gap-2 rounded-full border border-white/15 bg-white/10 py-1 pl-1 pr-3 sm:flex" title={session.username}>
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-gold text-[11px] font-black text-navy-950">
+                    {session.username.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="max-w-28 truncate text-[13px] font-semibold text-slate-200">{session.username}</span>
                 </span>
-                <button onClick={signOut} className="rounded-md px-2.5 py-2 text-[13px] font-bold text-slate-300 hover:bg-white/10 hover:text-white">
-                  Sign out
+                <button
+                  onClick={signOut}
+                  title="Sign out"
+                  aria-label="Sign out"
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[13px] font-bold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <Icon name="logout" size={16} />
+                  <span className="hidden lg:inline">Sign out</span>
                 </button>
               </div>
             </>
@@ -177,19 +160,21 @@ export function Chrome({ children }: { children: React.ReactNode }): React.JSX.E
               {mounted && !session && pathname !== "/login" && (
                 <Link
                   href="/login"
-                  className="rounded-md bg-saffron-500 px-4 py-2 text-sm font-bold text-navy-950 shadow-sm transition-colors hover:bg-saffron-600 hover:text-white"
+                  className="flex items-center gap-1.5 rounded-lg bg-saffron-500 px-4 py-2 text-sm font-bold text-navy-950 shadow-sm transition-colors hover:bg-saffron-600 hover:text-white"
                 >
+                  <Icon name="idcard" size={16} />
                   Officer sign in
                 </Link>
               )}
             </div>
           )}
         </div>
+        <div className="tricolor-bar h-1" aria-hidden="true" />
       </header>
 
       <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-4 md:px-7 md:pb-12 md:pt-6">
         {pathname === "/login" ? (
-          <div className="grid min-h-[60vh] place-items-center px-4 py-10">{children}</div>
+          <div className="grid min-h-[62vh] place-items-center px-2 py-8 sm:px-4">{children}</div>
         ) : (
           children
         )}
@@ -199,7 +184,7 @@ export function Chrome({ children }: { children: React.ReactNode }): React.JSX.E
         <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
           <div className="grid grid-cols-5">
             {NAV.map((item) => {
-              const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+              const active = isActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -211,7 +196,7 @@ export function Chrome({ children }: { children: React.ReactNode }): React.JSX.E
                   )}
                 >
                   <span className={cn("grid h-8 w-12 place-items-center rounded-full", active && "bg-navy-900 text-white")}>
-                    {item.icon}
+                    <Icon name={item.icon} size={18} />
                   </span>
                   {item.label}
                 </Link>
@@ -221,33 +206,52 @@ export function Chrome({ children }: { children: React.ReactNode }): React.JSX.E
         </nav>
       )}
 
-      <footer className="mt-auto border-t-4 border-saffron-500 bg-navy-950 text-slate-300">
-        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 py-8 text-sm md:grid-cols-3 md:px-7">
-          <div>
+      <footer className="mt-auto bg-navy-950 text-slate-300">
+        <div className="tricolor-bar h-1" aria-hidden="true" />
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-4 py-10 sm:grid-cols-2 md:grid-cols-4 md:px-7">
+          <div className="sm:col-span-2 md:col-span-1">
             <p className="flex items-center gap-2.5">
-              <Emblem />
+              <Emblem size="h-11 w-11" />
               <Wordmark compact />
             </p>
-            <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
+            <p className="mt-3 text-[13px] leading-relaxed text-slate-400">
               CPU-only label inspection for the Legal Metrology (Packaged Commodities) Rules, 2011.
-              सही माप, हर पैकेट.
             </p>
+            <p className="mt-1 font-display text-sm font-bold text-gold">सही माप, हर पैकेट.</p>
           </div>
           <nav aria-label="Footer">
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-500">Portals</p>
-            <ul className="space-y-1.5 text-[13px]">
-              <li><Link href="/" className="hover:text-white hover:underline">Home</Link></li>
-              <li><Link href="/scan" className="hover:text-white hover:underline">New scan</Link></li>
-              <li><Link href="/scans" className="hover:text-white hover:underline">Scan history</Link></li>
-              <li><Link href="/reports" className="hover:text-white hover:underline">Reports</Link></li>
+            <p className="mb-3 border-b-2 border-gold/60 pb-1.5 text-xs font-bold uppercase tracking-[0.16em] text-white">Portals</p>
+            <ul className="space-y-2 text-[13px]">
+              {[
+                ["/", "Home"],
+                ["/scan", "New scan"],
+                ["/scans", "Scan history"],
+                ["/reports", "Reports"],
+              ].map(([href, label]) => (
+                <li key={href}>
+                  <Link href={href} className="text-slate-400 transition-colors hover:text-gold hover:underline">
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <nav aria-label="Rules">
+            <p className="mb-3 border-b-2 border-gold/60 pb-1.5 text-xs font-bold uppercase tracking-[0.16em] text-white">The Rules</p>
+            <ul className="space-y-2 text-[13px] text-slate-400">
+              <li>Rule 6 · Mandatory declarations</li>
+              <li>Rule 7 · Print-size minima</li>
+              <li className="text-slate-500">“Verified” citations checked vs Gazette text.</li>
             </ul>
           </nav>
           <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-500">Citizen help</p>
-            <p className="text-[13px] leading-relaxed">
-              National Consumer Helpline: <span className="font-bold text-white">1915</span>
-              <br />
-              Rule citations marked “Verified” were checked against the official Gazette text.
+            <p className="mb-3 border-b-2 border-gold/60 pb-1.5 text-xs font-bold uppercase tracking-[0.16em] text-white">Citizen help</p>
+            <p className="flex items-center gap-2 text-[13px]">
+              <Icon name="phone" size={15} />
+              National Consumer Helpline: <span className="font-black text-white">1915</span>
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
+              Department of Consumer Affairs, Government of India.
             </p>
           </div>
         </div>

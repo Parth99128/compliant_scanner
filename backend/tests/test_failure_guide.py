@@ -41,7 +41,7 @@ def test_weak_read_miss_is_incomplete_not_non_compliant():
     mrp = next(r for r in rep.results if r.rule_id == "LMPC-6.1-mrp")
     assert mrp.status == "NOT_FOUND"
     assert mrp.cause == "possible_miss"
-    assert mrp.why and "45%" in mrp.why
+    assert mrp.why and "45%" in mrp.why and "%%" not in mrp.why
     assert any("macro" in s for s in mrp.next_steps)
     assert any("physical package" in s for s in mrp.next_steps)
     assert any("NOT non-compliant" in w for w in rep.warnings)
@@ -95,6 +95,7 @@ def test_all_rules_have_guidance_coverage():
                 continue
             assert r.cause in CAUSES, f"{r.rule_id} missing cause"
             assert r.why, f"{r.rule_id} missing why"
+            assert "%%" not in r.why, f"{r.rule_id} double-percent"
             assert r.next_steps, f"{r.rule_id} missing next_steps"
 
 

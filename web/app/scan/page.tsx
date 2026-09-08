@@ -5,9 +5,9 @@ import * as React from "react";
 
 import { useAuth, useMounted } from "@/components/auth-context";
 import { LiveScanner } from "@/components/live-scanner";
-import { PageHeader } from "@/components/page-header";
 import { AlertDestructive, AlertInfo } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Hero, Icon, Panel, SegmentedControl, inputCls, labelCls } from "@/components/ui/ministry";
 import { useToast } from "@/components/ui/toaster";
 import { ApiError, uploadScan } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -21,29 +21,32 @@ const STAGES = [
 
 function StageRail({ active, done }: { active: number; done: boolean }): React.JSX.Element {
   return (
-    <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4" aria-live="polite">
-      <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
+    <div className="mt-4 rounded-xl border border-navy-100 bg-navy-50 p-4" aria-live="polite">
+      <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-navy-100">
         <div
-          className="h-full rounded-full bg-saffron-500 transition-all duration-700 ease-out"
+          className="h-full rounded-full bg-gradient-to-r from-navy-800 via-navy-700 to-saffron-500 transition-all duration-700 ease-out"
           style={{ width: done ? "100%" : `${8 + (active / STAGES.length) * 84}%` }}
         />
       </div>
-      <ol className="flex flex-col gap-2">
+      <ol className="flex flex-col gap-0">
         {STAGES.map((label, i) => {
           const state = done || i < active ? "done" : i === active ? "active" : "todo";
           return (
-            <li key={label} className="flex items-center gap-2.5 text-[13px]">
+            <li key={label} className="relative flex items-center gap-3 pb-3 pl-1 last:pb-0">
+              {i < STAGES.length - 1 && (
+                <span aria-hidden="true" className={cn("absolute left-[15px] top-7 h-[calc(100%-20px)] w-0.5", state === "todo" ? "bg-slate-200" : "bg-igreen-700")} />
+              )}
               <span
                 className={cn(
-                  "grid h-5 w-5 flex-none place-items-center rounded-full text-[11px] font-bold",
-                  state === "done" && "bg-green-700 text-white",
+                  "z-10 grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-black ring-4 ring-navy-50",
+                  state === "done" && "bg-igreen-700 text-white",
                   state === "active" && "bg-navy-900 text-white",
                   state === "todo" && "bg-slate-200 text-slate-500"
                 )}
               >
                 {state === "done" ? "✓" : state === "active" ? <span className="spinner" /> : i + 1}
               </span>
-              <span className={state === "todo" ? "text-slate-400" : "font-semibold text-slate-800"}>
+              <span className={cn("text-[13px]", state === "todo" ? "text-slate-400" : "font-bold text-navy-950")}>
                 {label}
                 {state === "active" && <span className="dots" />}
               </span>
@@ -228,44 +231,35 @@ export default function ScanPage(): React.JSX.Element {
   }
 
   return (
-    <div className="animate-rise">
-      <PageHeader
+    <div className="animate-rise flex flex-col gap-4">
+      <Hero
+        kicker="New inspection"
+        kickerHi="नया निरीक्षण"
         title="New label scan"
         description="One close-up of the declaration panel — or several angles merged into a single verdict."
+        meta={
+          <span className={cn("flex items-center gap-1.5 font-bold", files.length > 1 ? "text-green-300" : "text-slate-300")}>
+            <Icon name="camera" size={14} />
+            {files.length}/5{files.length > 1 ? " · merge mode" : " captures attached"}
+          </span>
+        }
       />
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="text-sm font-bold">Label photos</h2>
-            <span className={cn("text-xs font-bold", files.length > 1 ? "text-green-800" : "text-slate-400")}>
-              {files.length}/5{files.length > 1 ? " · merge mode" : ""}
-            </span>
-          </div>
-          <p className="mb-3 text-xs text-slate-500">
-            {files.length > 1 ? "Angles merge into one verdict, best frame measured." : "Add angles to merge, or scan a single photo."}
-          </p>
-          <div className="mb-3 grid grid-cols-3 gap-1 rounded-md bg-navy-50 border border-navy-100 p-1 text-sm font-bold" role="tablist" aria-label="Photo source">
-            <button
-              type="button" role="tab" aria-selected={source === "camera"}
-              onClick={() => { stopCamera(); setSource("camera"); }}
-              className={cn("rounded py-2", source === "camera" ? "bg-navy-900 text-white shadow" : "text-slate-500")}
-            >
-              Camera
-            </button>
-            <button
-              type="button" role="tab" aria-selected={source === "live"}
-              onClick={() => { stopCamera(); setSource("live"); }}
-              className={cn("rounded py-2", source === "live" ? "bg-navy-900 text-white shadow" : "text-slate-500")}
-            >
-              Live auto
-            </button>
-            <button
-              type="button" role="tab" aria-selected={source === "upload"}
-              onClick={() => { stopCamera(); setSource("upload"); }}
-              className={cn("rounded py-2", source === "upload" ? "bg-navy-900 text-white shadow" : "text-slate-500")}
-            >
-              Upload
-            </button>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel
+          title="Label photos"
+          description={files.length > 1 ? "Angles merge into one verdict, best frame measured." : "Add angles to merge, or scan a single photo."}
+        >
+          <div className="mb-4">
+            <SegmentedControl
+              label="Photo source"
+              value={source}
+              onChange={(v) => { stopCamera(); setSource(v); }}
+              options={[
+                { value: "camera", label: "Camera", hint: "guided shots", icon: "camera" },
+                { value: "live", label: "Live auto", hint: "auto-capture", icon: "bolt" },
+                { value: "upload", label: "Upload", hint: "up to 5 files", icon: "upload" },
+              ]}
+            />
           </div>
           {source === "live" && session && (
             <div className="mb-3">
@@ -277,7 +271,7 @@ export default function ScanPage(): React.JSX.Element {
             </div>
           )}
           {source === "camera" && (
-            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-950 p-3">
+            <div className="mb-3 rounded-xl border border-navy-900 bg-slate-950 p-3 shadow-md ring-1 ring-gold/30">
               <ol className="mb-2 flex gap-2 text-[11px] font-bold">
                 <li className={cn("flex-1 rounded px-2 py-1 text-center", shotStep === 1 ? "bg-white text-slate-900" : "text-slate-400")}>
                   1 · Pack + card
@@ -337,7 +331,7 @@ export default function ScanPage(): React.JSX.Element {
             onDrop={(e) => { e.preventDefault(); setDragOver(false); add(e.dataTransfer.files); }}
             className={cn(
               "block cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all",
-              dragOver ? "border-slate-900 bg-slate-100 shadow-inner" : "border-slate-300 bg-slate-50/50 hover:border-slate-400 hover:bg-white"
+              dragOver ? "border-navy-800 bg-navy-50 shadow-inner" : "border-slate-300 bg-slate-50/60 hover:border-gold hover:bg-white"
             )}
           >
             <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
@@ -386,8 +380,8 @@ export default function ScanPage(): React.JSX.Element {
               {previews.map((u, i) => (
                 <div key={`${files[i]?.name}:${i}`} className="animate-pop group relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={u} alt={`Capture ${i + 1}`} className="h-24 w-full rounded-md border border-slate-200 object-cover" />
-                  <span className="absolute left-1 top-1 rounded bg-slate-900/85 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  <img src={u} alt={`Capture ${i + 1}`} className="h-24 w-full rounded-lg border border-navy-100 object-cover shadow-sm" />
+                  <span className="absolute left-1 top-1 rounded-md bg-navy-900/90 px-1.5 py-0.5 text-[10px] font-bold text-white">
                     {i === 0 ? "Base" : `Angle ${i + 1}`}
                   </span>
                   <button
@@ -413,45 +407,43 @@ export default function ScanPage(): React.JSX.Element {
               {files.length} angles selected — text will be unioned by confidence into one verdict.
             </AlertInfo>
           )}
-        </div>
-        <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold">Spatial calibration (Rule 7)</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            Font height in mm = pixels ÷ PPM. Include the card in shot 1 and the app
-            detects the scale itself — otherwise font rules return “not assessable”, never a pass.
-          </p>
+        </Panel>
+        <Panel
+          title="Spatial calibration (Rule 7)"
+          description="Font height in mm = pixels ÷ PPM. Include the card in shot 1 and the app detects the scale itself — otherwise font rules return “not assessable”, never a pass."
+        >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="ppm">PPM (px/mm)</label>
+              <label className={labelCls} htmlFor="ppm">PPM (px/mm)</label>
               <input id="ppm" value={ppm} onChange={(e) => setPpm(e.target.value)} placeholder="Auto-detect"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                className={inputCls} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="fpx">Glyph height (px)</label>
+              <label className={labelCls} htmlFor="fpx">Glyph height (px)</label>
               <input id="fpx" value={fontPx} onChange={(e) => setFontPx(e.target.value)} placeholder="Median"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                className={inputCls} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600" htmlFor="area">Panel area (cm²)</label>
+              <label className={labelCls} htmlFor="area">Panel area (cm²)</label>
               <input id="area" value={panelArea} onChange={(e) => setPanelArea(e.target.value)} placeholder="Table-II"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                className={inputCls} />
             </div>
           </div>
           <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13px] font-medium text-slate-700">
-            <input type="checkbox" checked={embossed} onChange={(e) => setEmbossed(e.target.checked)} className="accent-slate-900" />
+            <input type="checkbox" checked={embossed} onChange={(e) => setEmbossed(e.target.checked)} className="h-4 w-4 accent-navy-900" />
             Blown / moulded / embossed (higher minima apply)
           </label>
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-[13px] font-medium text-slate-700">
-            <input type="checkbox" checked={attachGps} onChange={(e) => { setAttachGps(e.target.checked); setGpsNote(""); }} className="accent-slate-900" />
+            <input type="checkbox" checked={attachGps} onChange={(e) => { setAttachGps(e.target.checked); setGpsNote(""); }} className="h-4 w-4 accent-navy-900" />
             Attach inspection location (GPS on the report)
           </label>
-          {gpsNote && <p className="mt-1 text-xs text-amber-800">{gpsNote}</p>}
+          {gpsNote && <p className="mt-1 text-xs font-semibold text-amber-800">{gpsNote}</p>}
           {error && <AlertDestructive className="mt-3">{error}</AlertDestructive>}
-          <Button disabled={busy || files.length === 0} onClick={submit} className="mt-4">
-            {busy ? "Analyzing…" : files.length > 1 ? `Merge ${files.length} angles and scan` : "Run compliance scan"}
+          <Button disabled={busy || files.length === 0} onClick={submit} size="lg" className="mt-4 w-full">
+            {busy ? <><span className="spinner" /> Analyzing…</> : files.length > 1 ? `Merge ${files.length} angles and scan` : "Run compliance scan"}
           </Button>
           {busy && <StageRail active={stage} done={finished} />}
-        </div>
+        </Panel>
       </div>
     </div>
   );

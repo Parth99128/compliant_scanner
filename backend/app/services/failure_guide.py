@@ -46,11 +46,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "why_typed": "No maker/packer name and address was provided — Rule 6(1)(a) requires it.",
         "why_low": (
             "We could not find the maker/packer name and address in a weak read "
-            "({conf}%) — it may be printed but unreadable (small, curved or glossy "
+            "({conf}) — it may be printed but unreadable (small, curved or glossy "
             "surface), or it may truly be absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) we found no maker/packer name and address — "
+            "On a clear read ({conf}) we found no maker/packer name and address — "
             "likely a real violation, but confirm: it can sit on a side flap or the "
             "bottom that was never photographed."
         ),
@@ -65,11 +65,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "label": "generic/common name",
         "why_typed": "No generic/common product name was provided — Rule 6(1)(b) requires it.",
         "why_low": (
-            "We could not find the generic product name in a weak read ({conf}%) — "
+            "We could not find the generic product name in a weak read ({conf}) — "
             "fancy brand lettering is often unreadable to OCR, or the name may truly be absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) we found no generic product name (e.g. 'Wheat "
+            "On a clear read ({conf}) we found no generic product name (e.g. 'Wheat "
             "Biscuits' under the brand) — likely a real violation; confirm on the pack."
         ),
         "panel": "front display panel under the brand name",
@@ -83,11 +83,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "label": "net quantity",
         "why_typed": "No usable net quantity was provided — Rule 6(1)(c) requires amount + standard unit.",
         "why_low": (
-            "We could not find the net quantity in a weak read ({conf}%) — it is small "
+            "We could not find the net quantity in a weak read ({conf}) — it is small "
             "print and easily missed, or it may truly be absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) we found no net quantity — likely a real violation; "
+            "On a clear read ({conf}) we found no net quantity — likely a real violation; "
             "confirm on the pack, usually near the MRP."
         ),
         "why_invalid": (
@@ -109,11 +109,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "label": "MRP",
         "why_typed": "No MRP was provided — Rule 6(1)(e) requires it with 'inclusive of all taxes'.",
         "why_low": (
-            "We could not find the MRP in a weak read ({conf}%) — price stickers and "
+            "We could not find the MRP in a weak read ({conf}) — price stickers and "
             "ink-jet MRPs are often unreadable, or it may truly be absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) we found no MRP — likely a real violation; "
+            "On a clear read ({conf}) we found no MRP — likely a real violation; "
             "confirm on the pack, including stickers."
         ),
         "why_invalid": (
@@ -135,11 +135,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "label": "manufacture/expiry dates",
         "why_typed": "No manufacture/pack date was provided — Rule 6(1)(d) requires month and year.",
         "why_low": (
-            "We could not find the dates in a weak read ({conf}%) — date stamps are usually "
+            "We could not find the dates in a weak read ({conf}) — date stamps are usually "
             "embossed or ink-jetted and are the single most-missed field, or they may truly be absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) we found no manufacture/pack date — likely a real "
+            "On a clear read ({conf}) we found no manufacture/pack date — likely a real "
             "violation; confirm on crimps, caps and stickers, not just the main label."
         ),
         "why_invalid": (
@@ -161,11 +161,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "label": "customer-care contact",
         "why_typed": "No customer-care name/address/contact was provided — required by the post-2011 proviso.",
         "why_low": (
-            "We could not find customer-care details in a weak read ({conf}%) — they sit in "
+            "We could not find customer-care details in a weak read ({conf}) — they sit in "
             "small print and are easily missed, or they may truly be absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) we found no customer-care contact — likely a real "
+            "On a clear read ({conf}) we found no customer-care contact — likely a real "
             "violation; confirm on the back panel."
         ),
         "panel": "customer-care panel (usually back, small print)",
@@ -178,11 +178,11 @@ GUIDE: dict[str, dict[str, object]] = {
         "label": "country of origin",
         "why_typed": "The pack is marked imported but no country of origin was provided.",
         "why_low": (
-            "We could not find the country of origin in a weak read ({conf}%) for a pack "
+            "We could not find the country of origin in a weak read ({conf}) for a pack "
             "marked imported — it may be printed but unreadable, or truly absent."
         ),
         "why_clear": (
-            "On a clear read ({conf}%) an imported pack shows no country of origin — "
+            "On a clear read ({conf}) an imported pack shows no country of origin — "
             "likely a real violation; confirm on the importer panel."
         ),
         "panel": "importer panel ('Imported by …')",
@@ -300,7 +300,7 @@ def annotate_failure(result, ocr_confidence: float | None = None):
         why = why_t
     steps = _str_list(guide, "steps_invalid") or [_VERIFY_STEP]
     if low_read:
-        why += f" Note: the read was weak ({_conf_txt(ocr_confidence)}), so double-check what we read before acting."
+        why += f" Note: the read was weak ({ocr_confidence:g}%), so double-check what we read before acting."
         steps = [_search_ocr(str(guide.get("keyword", "the value")))] + steps
     steps = steps + [_VERIFY_STEP, _REVIEW_STEP] if _VERIFY_STEP not in steps else steps + [_REVIEW_STEP]
     cause = "genuine" if not low_read else "likely_genuine"
