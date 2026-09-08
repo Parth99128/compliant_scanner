@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2800" viewBox="0 0 3840 2800" font-family="'Segoe UI', Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="16" markerHeight="16" refX="13" refY="8" orient="auto">
+      <polygon points="0,0 15,8 0,16" fill="#1F2937"/>
+    </marker>
+    <marker id="arrGray" markerWidth="16" markerHeight="16" refX="13" refY="8" orient="auto">
+      <polygon points="0,0 15,8 0,16" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="3840" height="2800" fill="#ffffff"/>
+  <image href="drishti-logo.jpg" x="120" y="60" width="200" height="200"/>
+
+  <text x="1920" y="165" text-anchor="middle" font-size="100" font-weight="800" fill="#C0392B">DrishtiLM – System Architecture</text>
+  <text x="1920" y="235" text-anchor="middle" font-size="40" fill="#555555">SIH26034 · Legal Metrology Packaged-Commodities Compliance Scanner (100% CPU)</text>
+
+  <!-- ======= OPTIONAL AI HELP ======= -->
+  <text x="3270" y="330" text-anchor="middle" font-size="32" fill="#6B7280">Optional AI help · off by default</text>
+  <rect x="2900" y="360" width="740" height="220" rx="24" fill="#F9FAFB" stroke="#6B7280" stroke-width="4" stroke-dasharray="18 12"/>
+  <circle cx="3110" cy="435" r="50" fill="#7C3AED"/>
+  <path d="M3110,395 C3116,417 3124,425 3146,431 C3124,437 3116,445 3110,467 C3104,445 3096,437 3074,431 C3096,425 3104,417 3110,395 Z" fill="#ffffff"/>
+  <text x="3110" y="522" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">Florence-2 VLM</text>
+  <text x="3110" y="556" text-anchor="middle" font-size="28" fill="#555555">2nd-opinion OCR</text>
+  <circle cx="3450" cy="435" r="50" fill="#2563EB"/>
+  <text x="3450" y="462" text-anchor="middle" font-size="52" font-weight="800" fill="#ffffff">✦</text>
+  <text x="3450" y="522" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">Gemini explain</text>
+  <text x="3450" y="556" text-anchor="middle" font-size="28" fill="#555555">optional · keyed</text>
+  <line x1="3100" y1="580" x2="3100" y2="680" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+
+  <!-- ======= TOP SATELLITES ======= -->
+  <g>
+    <circle cx="1060" cy="430" r="70" fill="#0C3446"/>
+    <path d="M1060,388 L1088,402 V436 C1088,458 1076,470 1060,478 C1044,470 1032,458 1032,436 V402 Z" fill="none" stroke="#ffffff" stroke-width="9"/>
+    <circle cx="1060" cy="438" r="9" fill="#ffffff"/>
+    <text x="1150" y="422" font-size="40" font-weight="800" fill="#111111">JWT Auth</text>
+    <text x="1150" y="468" font-size="34" fill="#555555">officer roles</text>
+    <line x1="1060" y1="505" x2="1060" y2="770" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  </g>
+
+  <!-- ======= MAIN ROW ======= -->
+  <line x1="330" y1="880" x2="552" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="230" cy="880" r="85" fill="#0C3446"/>
+    <rect x="192" y="818" width="76" height="124" rx="16" fill="none" stroke="#ffffff" stroke-width="11"/>
+    <circle cx="230" cy="912" r="7" fill="#ffffff"/>
+    <text x="348" y="802" font-size="68" font-weight="800" fill="#0B2A4A">1</text>
+    <text x="230" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">Capture</text>
+    <text x="230" y="1100" text-anchor="middle" font-size="36" fill="#555555">phone camera</text>
+  </g>
+  <line x1="752" y1="880" x2="975" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="652" cy="880" r="85" fill="#111111"/>
+    <text x="652" y="918" text-anchor="middle" font-size="100" font-weight="800" fill="#ffffff">N</text>
+    <text x="770" y="802" font-size="68" font-weight="800" fill="#0B2A4A">2</text>
+    <text x="652" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">Next.js UI</text>
+    <text x="652" y="1100" text-anchor="middle" font-size="36" fill="#555555">React + Tailwind</text>
+  </g>
+  <line x1="1175" y1="880" x2="1397" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="1497" cy="880" r="85" fill="#009688"/>
+    <polygon points="1509,-47 1465,17 1491,17 1483,55 1529,-1 1503,-1" transform="translate(0,880)" fill="#ffffff"/>
+    <text x="1615" y="802" font-size="68" font-weight="800" fill="#0B2A4A">3</text>
+    <text x="1497" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">FastAPI</text>
+    <text x="1497" y="1100" text-anchor="middle" font-size="36" fill="#555555">REST + JWT</text>
+  </g>
+  <line x1="1597" y1="880" x2="1820" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="1920" cy="880" r="85" fill="#0C3446"/>
+    <path d="M1862,880 Q1920,832 1978,880 Q1920,928 1862,880 Z" fill="none" stroke="#ffffff" stroke-width="11"/>
+    <circle cx="1920" cy="880" r="15" fill="#ffffff"/>
+    <text x="2038" y="802" font-size="68" font-weight="800" fill="#0B2A4A">4</text>
+    <text x="1920" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">OpenCV Enhance</text>
+    <text x="1920" y="1100" text-anchor="middle" font-size="36" fill="#555555">denoise · PPM scale</text>
+  </g>
+  <line x1="2020" y1="880" x2="2242" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="2342" cy="880" r="85" fill="#1F2937"/>
+    <rect x="2297" y="846" width="90" height="13" rx="6.5" fill="#ffffff"/>
+    <rect x="2297" y="873" width="90" height="13" rx="6.5" fill="#ffffff"/>
+    <rect x="2297" y="900" width="58" height="13" rx="6.5" fill="#ffffff"/>
+    <text x="2460" y="802" font-size="68" font-weight="800" fill="#0B2A4A">5</text>
+    <text x="2342" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">Tesseract OCR</text>
+    <text x="2342" y="1100" text-anchor="middle" font-size="36" fill="#555555">dual-PSM + boxes</text>
+  </g>
+  <line x1="2442" y1="880" x2="2665" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="2765" cy="880" r="85" fill="#111827"/>
+    <text x="2765" y="902" text-anchor="middle" font-size="56" font-weight="800" font-family="Consolas, monospace" fill="#ffffff">&lt;/&gt;</text>
+    <text x="2883" y="802" font-size="68" font-weight="800" fill="#0B2A4A">6</text>
+    <text x="2765" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">Regex + spaCy</text>
+    <text x="2765" y="1100" text-anchor="middle" font-size="36" fill="#555555">fields + gazetteer</text>
+  </g>
+  <line x1="2865" y1="880" x2="3087" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="3187" cy="880" r="85" fill="#0E6B2E"/>
+    <text x="3187" y="918" text-anchor="middle" font-size="104" font-weight="800" fill="#ffffff">§</text>
+    <text x="3305" y="802" font-size="68" font-weight="800" fill="#0B2A4A">7</text>
+    <text x="3187" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">Rule Engine</text>
+    <text x="3187" y="1100" text-anchor="middle" font-size="36" fill="#555555">Rule 6 + 7 · Tables I &amp; II</text>
+  </g>
+  <line x1="3287" y1="880" x2="3510" y2="880" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="3610" cy="880" r="85" fill="#B91C1C"/>
+    <path d="M3578,828 h44 l24,24 v80 h-68 Z" fill="none" stroke="#ffffff" stroke-width="10"/>
+    <line x1="3590" y1="862" x2="3618" y2="862" stroke="#ffffff" stroke-width="8"/>
+    <line x1="3590" y1="884" x2="3618" y2="884" stroke="#ffffff" stroke-width="8"/>
+    <text x="3728" y="802" font-size="68" font-weight="800" fill="#0B2A4A">8</text>
+    <text x="3610" y="1042" text-anchor="middle" font-size="48" font-weight="800" fill="#111111">PDF Report</text>
+    <text x="3610" y="1100" text-anchor="middle" font-size="36" fill="#555555">evidence + audit</text>
+  </g>
+
+  <!-- ======= BOTTOM SATELLITES ======= -->
+  <g>
+    <line x1="850" y1="880" x2="850" y2="1330" stroke="#1F2937" stroke-width="6"/>
+    <circle cx="850" cy="880" r="12" fill="#1F2937"/>
+    <circle cx="850" cy="1450" r="80" fill="#1A73E8"/>
+    <path d="M850,1395 C822,1395 800,1418 800,1446 C800,1478 850,1525 850,1525 C850,1525 900,1478 900,1446 C900,1418 878,1395 850,1395 Z" fill="#ffffff"/>
+    <circle cx="850" cy="1446" r="15" fill="#1A73E8"/>
+    <text x="850" y="1572" text-anchor="middle" font-size="44" font-weight="800" fill="#111111">GPS Location</text>
+    <text x="850" y="1618" text-anchor="middle" font-size="34" fill="#555555">opt-in at upload</text>
+  </g>
+  <g>
+    <circle cx="3050" cy="880" r="12" fill="#1F2937"/>
+    <line x1="3050" y1="880" x2="3050" y2="1330" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+    <text x="3020" y="1130" text-anchor="end" font-size="34" fill="#555555">save scan</text>
+    <circle cx="3050" cy="1450" r="80" fill="#336791"/>
+    <ellipse cx="3050" cy="1422" rx="44" ry="16" fill="none" stroke="#ffffff" stroke-width="10"/>
+    <path d="M3006,1422 V1478 A44,16 0 0 0 3094,1478 V1422" fill="none" stroke="#ffffff" stroke-width="10"/>
+    <text x="3050" y="1572" text-anchor="middle" font-size="44" font-weight="800" fill="#111111">PostgreSQL</text>
+    <text x="3050" y="1618" text-anchor="middle" font-size="34" fill="#555555">scans · jobs · boxes</text>
+  </g>
+  <g>
+    <circle cx="3450" cy="1450" r="80" fill="#0C3446"/>
+    <circle cx="3450" cy="1450" r="46" fill="none" stroke="#ffffff" stroke-width="11"/>
+    <polyline points="3428,1452 3444,1468 3474,1434" fill="none" stroke="#ffffff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="3450" y="1572" text-anchor="middle" font-size="44" font-weight="800" fill="#111111">Officer Review</text>
+    <text x="3450" y="1618" text-anchor="middle" font-size="34" fill="#555555">confirm gate</text>
+    <path d="M3450,1360 V1080 H3560" fill="none" stroke="#6B7280" stroke-width="5" stroke-dasharray="16 12" marker-end="url(#arrGray)"/>
+    <text x="3430" y="1230" text-anchor="end" font-size="34" fill="#555555">unlocks report</text>
+  </g>
+
+  <!-- ======= BOTTOM DASHED BOXES ======= -->
+  <rect x="300" y="1720" width="1600" height="250" rx="24" fill="#F9FAFB" stroke="#6B7280" stroke-width="4" stroke-dasharray="18 12"/>
+  <text x="380" y="1800" font-size="44" font-weight="800" fill="#111111">Ship it: docker compose up</text>
+  <text x="380" y="1862" font-size="36" fill="#555555">db + backend + web · one command</text>
+  <text x="380" y="1920" font-size="36" fill="#555555">Next.js dashboard + FastAPI docs</text>
+  <rect x="1980" y="1720" width="1560" height="250" rx="24" fill="#F9FAFB" stroke="#6B7280" stroke-width="4" stroke-dasharray="18 12"/>
+  <text x="2060" y="1800" font-size="44" font-weight="800" fill="#111111">Check it: GitHub Actions CI</text>
+  <text x="2060" y="1862" font-size="36" fill="#555555">ruff · black · mypy · pytest</text>
+  <text x="2060" y="1920" font-size="36" fill="#555555">90 tests green on every push</text>
+
+  <text x="1920" y="2090" text-anchor="middle" font-size="38" fill="#4B5563">Safety: unmeasured rules return NOT_ASSESSABLE — never a silent PASS · 100% CPU</text>
+</svg>

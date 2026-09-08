@@ -22,7 +22,7 @@ function verdictClasses(v: string): string {
 
 function verdictTitle(v: string): string {
   if (v === "COMPLIANT") return "Compliant";
-  if (v === "INCOMPLETE") return "Incomplete — measurement needed";
+  if (v === "INCOMPLETE") return "Incomplete — needs verification";
   return "Non-compliant";
 }
 
@@ -47,9 +47,24 @@ function RuleCard({ check }: { check: Check }): React.JSX.Element {
           <Badge tone="red">Fail</Badge>
         )}
         {check.citation_verified ? <Badge tone="blue">Verified</Badge> : <Badge>Unverified</Badge>}
+        {check.cause === "possible_miss" && <Badge tone="amber">Needs verification — may be our miss</Badge>}
+        {check.cause === "likely_genuine" && <Badge tone="red">Likely violation — verify</Badge>}
+        {check.cause === "disputed" && <Badge tone="red">Disputed by officer</Badge>}
       </div>
       <p className="mt-0.5 text-xs text-slate-500">{check.citation}</p>
       <p className="mt-1.5 text-[13px]">{check.message}</p>
+      {check.why && (
+        <p className="mt-1.5 text-[13px] text-slate-700">
+          <span className="font-semibold">Why:</span> {check.why}
+        </p>
+      )}
+      {check.next_steps.length > 0 && (
+        <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-[13px] text-slate-700">
+          {check.next_steps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      )}
       {(check.observed || check.expected) && (
         <div className="mt-2 rounded border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
           <p>Observed: {check.observed ?? "—"}</p>

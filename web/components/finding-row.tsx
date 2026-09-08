@@ -98,6 +98,23 @@ export function FindingRow({
         )}
       </div>
       <p className="mt-0.5 font-mono text-[11px] text-slate-500">{check.citation}</p>
+      {check.status !== "PASS" && check.cause === "possible_miss" && (
+        <p className="mt-1.5 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900">
+          Needs verification — our read may have missed this, not necessarily a violation.
+        </p>
+      )}
+      {check.status !== "PASS" && check.why && (
+        <p className="mt-1.5 text-xs text-slate-700">
+          <span className="font-semibold">Why:</span> {check.why}
+        </p>
+      )}
+      {check.status !== "PASS" && check.next_steps.length > 0 && (
+        <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-xs text-slate-700">
+          {check.next_steps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <input
           value={text}

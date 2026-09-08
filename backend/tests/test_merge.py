@@ -177,7 +177,7 @@ def test_report_embeds_every_angle():
     )
     rows = [SimpleNamespace(frame_index=1, image_blob=b"angle2bytes")]
     frames = _report_frames(rec, rows)
-    assert [f["label"] for f in frames] == ["Angle 1 (Best)", "Angle 2"]
+    assert [f["label"] for f in frames] == ["Angle 1 (Best capture)", "Angle 2"]
     assert [f["blob"] for f in frames] == [b"bestbytes", b"angle2bytes"]
 
     tok = _auth()
@@ -250,7 +250,7 @@ def test_report_fits_tall_portrait_angles():
         [],
         [],
         [
-            {"label": "Angle 1 (Best)", "blob": blob, "boxes": boxes, "cw": 900, "ch": 2000},
+            {"label": "Angle 1 (Best capture)", "blob": blob, "boxes": boxes, "cw": 900, "ch": 2000},
             {"label": "Angle 2", "blob": blob2, "boxes": boxes, "cw": 900, "ch": 2000},
         ],
     )

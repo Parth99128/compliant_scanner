@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2800" viewBox="0 0 3840 2800" font-family="'Segoe UI', Arial, sans-serif">
+  <!-- DrishtiLM architecture flow · SSW-style: brand marks, numbered order, dashed groups -->
+  <defs>
+    <marker id="arr" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto">
+      <polygon points="0,0 13,7 0,14" fill="#1F2937"/>
+    </marker>
+    <marker id="arrGray" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto">
+      <polygon points="0,0 13,7 0,14" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="3840" height="2800" fill="#ffffff"/>
+  <text x="1920" y="150" text-anchor="middle" font-size="100" font-weight="800" fill="#C0392B">DrishtiLM – Architecture Diagram</text>
+
+  <!-- ======= OPTIONAL AI HELP (dashed) ======= -->
+  <text x="3270" y="92" text-anchor="middle" font-size="32" fill="#6B7280">Optional AI help · off by default</text>
+  <rect x="2900" y="120" width="740" height="220" rx="24" fill="#F9FAFB" stroke="#6B7280" stroke-width="4" stroke-dasharray="18 12"/>
+  <rect x="3060" y="145" width="100" height="100" rx="22" fill="#7C3AED"/>
+  <text x="3110" y="218" text-anchor="middle" font-size="56" font-weight="800" fill="#ffffff">V</text>
+  <text x="3110" y="292" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">Florence-2 VLM</text>
+  <text x="3110" y="324" text-anchor="middle" font-size="28" fill="#555555">2nd-opinion OCR</text>
+  <path d="M3450,145 C3458,175 3470,187 3500,195 C3470,203 3458,215 3450,245 C3442,215 3430,203 3400,195 C3430,187 3442,175 3450,145 Z" fill="#3B82F6"/>
+  <text x="3450" y="292" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">Gemini explain</text>
+  <text x="3450" y="324" text-anchor="middle" font-size="28" fill="#555555">optional · keyed</text>
+  <line x1="3100" y1="340" x2="3100" y2="440" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+
+  <!-- ======= ROW 1 ======= -->
+  <g>
+    <path d="M250,478 C208,478 182,508 182,544 C182,592 250,662 250,662 C250,662 318,592 318,544 C318,508 292,478 250,478 Z" fill="#1A73E8"/>
+    <circle cx="250" cy="544" r="20" fill="#ffffff"/>
+    <text x="250" y="730" text-anchor="middle" font-size="44" font-weight="800" fill="#111111">Device GPS</text>
+    <text x="250" y="778" text-anchor="middle" font-size="36" fill="#555555">opt-in at upload</text>
+    <line x1="340" y1="560" x2="590" y2="560" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  </g>
+  <g>
+    <rect x="620" y="410" width="160" height="300" rx="30" fill="#0B2A4A"/>
+    <rect x="640" y="452" width="120" height="190" rx="8" fill="#DBEAFE"/>
+    <circle cx="700" cy="676" r="11" fill="#ffffff"/>
+    <text x="850" y="430" font-size="84" font-weight="800" fill="#0B2A4A">1</text>
+    <text x="700" y="800" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">Officer Phone Camera</text>
+    <text x="700" y="862" text-anchor="middle" font-size="42" fill="#555555">capture + GPS opt-in</text>
+  </g>
+  <line x1="940" y1="560" x2="1690" y2="560" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <circle cx="1920" cy="560" r="110" fill="#111111"/>
+    <text x="1920" y="602" text-anchor="middle" font-size="120" font-weight="800" fill="#ffffff">N</text>
+    <text x="2070" y="430" font-size="84" font-weight="800" fill="#0B2A4A">2</text>
+    <text x="1920" y="800" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">Next.js Web App</text>
+    <text x="1920" y="862" text-anchor="middle" font-size="42" fill="#555555">dashboard · gallery · review</text>
+  </g>
+  <line x1="2150" y1="560" x2="2910" y2="560" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <text x="2530" y="650" text-anchor="middle" font-size="34" fill="#555555">JWT-secured</text>
+  <g>
+    <rect x="3030" y="450" width="220" height="220" rx="44" fill="#009688"/>
+    <text x="3140" y="600" text-anchor="middle" font-size="130" font-weight="800" fill="#ffffff">F</text>
+    <text x="3290" y="430" font-size="84" font-weight="800" fill="#0B2A4A">3</text>
+    <text x="3140" y="800" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">FastAPI /api/v1</text>
+    <text x="3140" y="862" text-anchor="middle" font-size="42" fill="#555555">auth · limits · jobs</text>
+  </g>
+  <path d="M3250,560 H3580 V1170 H3272" fill="none" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+
+  <!-- ======= ROW 2 (right to left) ======= -->
+  <g>
+    <circle cx="3140" cy="1170" r="110" fill="none" stroke="#3A7BD5" stroke-width="30"/>
+    <circle cx="3140" cy="1170" r="28" fill="#E74C3C"/>
+    <text x="3290" y="1040" font-size="84" font-weight="800" fill="#0B2A4A">4</text>
+    <text x="3140" y="1410" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">OpenCV Preprocess</text>
+    <text x="3140" y="1472" text-anchor="middle" font-size="42" fill="#555555">enhance · deskew · PPM · sharpness</text>
+  </g>
+  <line x1="2910" y1="1170" x2="2150" y2="1170" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <rect x="1810" y="1060" width="220" height="220" rx="44" fill="#1F2937"/>
+    <text x="1920" y="1210" text-anchor="middle" font-size="130" font-weight="800" fill="#ffffff">T</text>
+    <text x="2070" y="1040" font-size="84" font-weight="800" fill="#0B2A4A">5</text>
+    <text x="1920" y="1410" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">Tesseract OCR</text>
+    <text x="1920" y="1472" text-anchor="middle" font-size="42" fill="#555555">dual-PSM · boxes + confidence</text>
+    <text x="1920" y="1518" text-anchor="middle" font-size="36" fill="#555555">Florence-2 if weak (&lt;60%)</text>
+  </g>
+  <line x1="1690" y1="1170" x2="920" y2="1170" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <rect x="590" y="1060" width="220" height="220" rx="44" fill="#111827"/>
+    <text x="700" y="1212" text-anchor="middle" font-size="64" font-weight="800" font-family="Consolas, monospace" fill="#ffffff">{.*}</text>
+    <text x="850" y="1040" font-size="84" font-weight="800" fill="#0B2A4A">6</text>
+    <text x="700" y="1410" text-anchor="middle" font-size="54" font-weight="800" fill="#111111">Regex + spaCy + RapidFuzz</text>
+    <text x="700" y="1472" text-anchor="middle" font-size="42" fill="#555555">fields + brand gazetteer</text>
+  </g>
+  <path d="M480,1170 H260 V1820 H478" fill="none" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+
+  <!-- ======= ROW 3 ======= -->
+  <g>
+    <circle cx="700" cy="1820" r="110" fill="#0B2A4A"/>
+    <text x="700" y="1862" text-anchor="middle" font-size="120" font-weight="800" fill="#C9A227">§</text>
+    <text x="850" y="1690" font-size="84" font-weight="800" fill="#0B2A4A">7</text>
+    <text x="700" y="2060" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">Rule 6 + 7 Engine</text>
+    <text x="700" y="2122" text-anchor="middle" font-size="42" fill="#555555">deterministic verdicts</text>
+    <text x="700" y="2172" text-anchor="middle" font-size="38" font-weight="800" fill="#0E6B2E">✓ Rule 7 verified vs Gazette</text>
+  </g>
+  <line x1="920" y1="1820" x2="1690" y2="1820" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <rect x="1810" y="1710" width="220" height="220" rx="44" fill="#336791"/>
+    <text x="1920" y="1872" text-anchor="middle" font-size="92" font-weight="800" fill="#ffffff">PG</text>
+    <text x="2070" y="1690" font-size="84" font-weight="800" fill="#0B2A4A">8</text>
+    <text x="1920" y="2060" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">PostgreSQL / SQLite</text>
+    <text x="1920" y="2122" text-anchor="middle" font-size="42" fill="#555555">scans · jobs · audit trail</text>
+  </g>
+  <line x1="2150" y1="1820" x2="2910" y2="1820" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <g>
+    <rect x="3062" y="1722" width="156" height="196" rx="18" fill="#E02424"/>
+    <polygon points="3160,1722 3218,1722 3218,1780" fill="#F8B4B4"/>
+    <text x="3140" y="1872" text-anchor="middle" font-size="54" font-weight="800" fill="#ffffff">PDF</text>
+    <text x="3290" y="1690" font-size="84" font-weight="800" fill="#0B2A4A">9</text>
+    <text x="3140" y="2060" text-anchor="middle" font-size="60" font-weight="800" fill="#111111">ReportLab PDF Report</text>
+    <text x="3140" y="2122" text-anchor="middle" font-size="42" fill="#555555">photo evidence + enforcement</text>
+  </g>
+  <path d="M2500,2120 V900 H2160" fill="none" stroke="#6B7280" stroke-width="5" stroke-dasharray="18 12" marker-end="url(#arrGray)"/>
+  <text x="2500" y="860" text-anchor="middle" font-size="38" fill="#4B5563">history · stats · review</text>
+
+  <!-- ======= DEPLOY STRIP ======= -->
+  <g>
+    <circle cx="520" cy="2470" r="85" fill="#111111"/>
+    <circle cx="492" cy="2442" r="13" fill="#ffffff"/>
+    <circle cx="548" cy="2498" r="13" fill="#ffffff"/>
+    <path d="M492,2442 C518,2442 522,2498 548,2498" fill="none" stroke="#ffffff" stroke-width="10"/>
+    <text x="520" y="2625" text-anchor="middle" font-size="44" font-weight="800" fill="#111111">GitHub Actions</text>
+    <text x="520" y="2670" text-anchor="middle" font-size="34" fill="#555555">lint · type · 90 tests</text>
+  </g>
+  <line x1="700" y1="2470" x2="950" y2="2470" stroke="#1F2937" stroke-width="6" marker-end="url(#arr)"/>
+  <rect x="950" y="2330" width="2400" height="280" rx="24" fill="#F9FAFB" stroke="#6B7280" stroke-width="4" stroke-dasharray="18 12"/>
+  <text x="1050" y="2390" font-size="40" fill="#4B5563">Deploy — one command: docker compose up</text>
+  <g>
+    <rect x="1345" y="2445" width="110" height="110" rx="26" fill="#336791"/>
+    <text x="1400" y="2520" text-anchor="middle" font-size="60" font-weight="800" fill="#ffffff">PG</text>
+    <text x="1400" y="2595" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">PostgreSQL 16</text>
+  </g>
+  <g>
+    <rect x="2095" y="2445" width="110" height="110" rx="26" fill="#009688"/>
+    <text x="2150" y="2520" text-anchor="middle" font-size="60" font-weight="800" fill="#ffffff">F</text>
+    <text x="2150" y="2595" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">FastAPI + Tesseract</text>
+  </g>
+  <g>
+    <circle cx="2900" cy="2500" r="55" fill="#111111"/>
+    <text x="2900" y="2522" text-anchor="middle" font-size="60" font-weight="800" fill="#ffffff">N</text>
+    <text x="2900" y="2595" text-anchor="middle" font-size="34" font-weight="800" fill="#111111">Next.js UI</text>
+  </g>
+
+  <text x="200" y="2730" font-size="34" fill="#6B7280">DrishtiLM · SIH26034 · 100% CPU</text>
+  <text x="3640" y="2730" text-anchor="end" font-size="34" fill="#6B7280">Numbers show flow order</text>
+</svg>

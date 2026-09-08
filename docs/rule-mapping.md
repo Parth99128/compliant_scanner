@@ -46,5 +46,16 @@ Table-II (length/area/number, by principal display panel area):
 
 Rule 7(3): letters ≥ 1mm (≥ 2mm when blown/formed/molded/embossed/perforated);
 width of any letter/numeral ≥ one-third its height except `1`, `i`, `I`, `l`.
-Table-II checks skip (pass) when panel area is unmeasured; all Rule 7 checks skip
-(pass) when the corresponding measurement is absent.
+Table-II returns NOT_ASSESSABLE when panel area is unmeasured; all Rule 7 checks
+return NOT_ASSESSABLE when the corresponding measurement is absent — never a
+silent PASS (see `check_numeral_height` / `check_letter_height` / `check_width_ratio`).
+
+## Failure guidance — a miss is not a violation
+
+Every FAIL/NOT_FOUND outcome carries `cause` (`genuine | likely_genuine |
+possible_miss | unmeasured`), a plain `why`, and ordered `next_steps`
+(macro retake → OCR-text check → physical verification → Review action).
+`NOT_FOUND` on a weak read (< 60% OCR confidence) is `possible_miss` and
+folds the verdict to `INCOMPLETE`, never `NON_COMPLIANT` — the officer
+verifies on the pack (confirm / correct / override) instead of the system
+condemning a pack it could not read. See `backend/app/services/failure_guide.py`.

@@ -22,3 +22,18 @@
 
 Errors: `{detail, request_id}` with 400/401/403/404/409/413/415/422/429/500/502.
 Full OpenAPI/Swagger at `/docs` when server runs.
+
+## Failure guidance (every non-PASS result)
+
+Each result carries `cause` (`""` on PASS, else `genuine | likely_genuine |
+possible_miss | unmeasured | attested | disputed`), a plain-language `why`,
+and ordered `next_steps[]` (retake macro → check OCR text → verify on the
+physical pack → Review confirm/correct/override). Shown in the UI rule cards
+and the PDF findings table.
+
+A miss is not a violation: `NOT_FOUND` outcomes on a weak read (OCR
+confidence < 60%) are `possible_miss` and fold the verdict to `INCOMPLETE`
+(verify, don't condemn) — unless a genuine breach is also present, which
+keeps `NON_COMPLIANT`. Typed `/validate` input (no OCR) keeps the strict
+verdict. Officer attestation clears stale guidance (`attested`) or marks
+disputes (`disputed`).

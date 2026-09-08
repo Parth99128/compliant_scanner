@@ -316,6 +316,9 @@ def _checks(report) -> list[CheckOut]:
             severity=r.severity,
             remedy=r.remedy,
             manual=bool(getattr(r, "manual", False)),
+            cause=str(getattr(r, "cause", "") or ""),
+            why=str(getattr(r, "why", "") or ""),
+            next_steps=list(getattr(r, "next_steps", None) or []),
         )
         for r in report.results
     ]
@@ -340,6 +343,9 @@ def _stored_checks(stored: list[dict]) -> list[CheckOut]:
                 severity=r.get("severity", "info"),
                 remedy=r.get("remedy"),
                 manual=bool(r.get("manual", False)),
+                cause=str(r.get("cause", "") or ""),
+                why=str(r.get("why", "") or ""),
+                next_steps=list(r.get("next_steps", None) or []),
             )
         )
     return out
@@ -624,7 +630,7 @@ def _run_pipeline(
             is_embossed=is_embossed,
             panel_area_cm2=panel_area_cm2,
         )
-    report = evaluate_compliance(decl, ocr_confidence=ocr.confidence or None)
+    report = evaluate_compliance(decl, ocr_confidence=ocr.confidence)
     # Barcode identity cross-check (INFO only): GTIN + GS1 prefix country.
     # Never changes the verdict — barcodes don't encode declarations.
     try:
@@ -922,7 +928,7 @@ async def _process_merge_scan(
         is_embossed=is_embossed,
         panel_area_cm2=panel_area_cm2,
     )
-    report = evaluate_compliance(decl, ocr_confidence=best.ocr_confidence or None)
+    report = evaluate_compliance(decl, ocr_confidence=best.ocr_confidence)
     # Carry over barcode identity cards from the best frame (INFO only).
     carried = [r for r in best.report.results if r.rule_id.startswith("LMPC-gtin")]
     if carried:
@@ -1203,7 +1209,7 @@ def update_fields(
         decl = dataclasses.replace(base, **patch)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"Bad field value: {exc}")
-    report = evaluate_compliance(decl, ocr_confidence=rec.ocr_confidence or None)
+    report = evaluate_compliance(decl, ocr_confidence=rec.ocr_confidence)
     rec.declaration_json = _decl_snapshot(decl)
     machine = [dataclasses.asdict(r) for r in report.results]
     effective = _apply_finding_overlays(machine, _finding_overlays(rec))
@@ -1264,6 +1270,18 @@ def _apply_finding_overlays(stored: list[dict], overlays: dict) -> list[dict]:
         r = dict(r)
         if "status" in ov:
             r["status"] = ov["status"]
+            if ov["status"] == "PASS":
+                # Attested findings must not keep stale machine failure guidance.
+                r["cause"] = "attested"
+                r["why"] = ""
+                r["next_steps"] = []
+            elif ov["status"] == "FAIL":
+                r["cause"] = "disputed"
+                r["why"] = "Officer disputes the machine PASS — treat as failing pending re-check."
+                r["next_steps"] = [
+                    "Verify on the physical package with your own eyes.",
+                    "Re-capture the relevant panel and re-scan if needed.",
+                ]
         if "observed" in ov:
             r["observed"] = ov["observed"]
         r["manual"] = True
@@ -1568,7 +1586,7 @@ def _report_frames(rec: ScanRecord, extra_rows: list) -> list[dict]:
     boxes, coord_w, coord_h = _stored_boxes(rec)
     frames = [
         {
-            "label": f"Angle {best_idx + 1} (Best)",
+            "label": f"Angle {best_idx + 1} (Best capture)",
             "blob": rec.image_blob,
             "boxes": boxes,
             "cw": coord_w,

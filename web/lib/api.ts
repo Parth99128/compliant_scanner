@@ -109,6 +109,9 @@ const CheckSchema = z.object({
   severity: z.string().default("info"),
   remedy: z.string().nullable().default(null),
   manual: z.boolean().default(false),
+  cause: z.string().default(""),
+  why: z.string().default(""),
+  next_steps: z.array(z.string()).default([]),
 });
 export type Check = z.infer<typeof CheckSchema>;
 

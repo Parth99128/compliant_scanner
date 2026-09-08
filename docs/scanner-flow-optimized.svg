@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1120" viewBox="0 0 1920 1120" font-family="'Segoe UI', Inter, Arial, sans-serif" role="img" aria-label="How our scanner reads a pack - optimized diagram">
+  <!-- Optimized remake: high contrast, larger type, consistent spacing, vector sharp -->
+  <defs>
+    <marker id="arr" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <polygon points="0,0 10,6 0,12" fill="#0F172A"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1920" height="1120" fill="#FFFFFF"/>
+
+  <!-- Header -->
+  <rect x="0" y="0" width="1920" height="148" fill="#0B1F3A"/>
+  <rect x="0" y="0" width="1920" height="148" fill="none"/>
+  <text x="48" y="72" font-size="52" font-weight="800" fill="#FFFFFF">How our scanner reads a pack</text>
+  <text x="48" y="112" font-size="22" fill="#CBD5E1">Follow one noodles pack from photo to report card</text>
+  <rect x="1620" y="36" width="252" height="68" rx="14" fill="#F59E0B"/>
+  <text x="1746" y="79" text-anchor="middle" font-size="24" font-weight="800" fill="#0B1F3A">SIH 2026</text>
+
+  <!-- ===== Cards ===== -->
+  <!-- Card 1 -->
+  <g>
+    <rect x="40" y="172" width="340" height="610" rx="18" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
+    <rect x="40" y="172" width="340" height="26" rx="13" fill="#2563EB"/>
+    <rect x="40" y="185" width="340" height="13" fill="#2563EB"/>
+    <!-- Icon -->
+    <g transform="translate(210,290)" stroke="#2563EB" stroke-width="8" fill="none">
+      <rect x="-34" y="-48" width="68" height="96" rx="12"/>
+      <rect x="-20" y="-30" width="40" height="40" rx="8"/>
+      <circle cx="0" cy="-10" r="8" fill="#2563EB" stroke="none"/>
+    </g>
+    <text x="210" y="392" text-anchor="middle" font-size="20" font-weight="800" fill="#2563EB">1 · TAKE A PHOTO</text>
+    <text x="210" y="418" text-anchor="middle" font-size="17" fill="#334155">Point the phone.</text>
+    <text x="210" y="442" text-anchor="middle" font-size="17" fill="#334155">Tap. Done.</text>
+    <!-- Illustration -->
+    <rect x="64" y="466" width="292" height="200" rx="14" fill="#F1F5F9"/>
+    <rect x="104" y="506" width="212" height="120" rx="12" fill="#D97706" stroke="#92400E" stroke-width="2"/>
+    <rect x="124" y="530" width="172" height="52" rx="8" fill="#FFFFFF"/>
+    <text x="210" y="552" text-anchor="middle" font-size="14" font-weight="800" fill="#0F172A">NOODLES</text>
+    <text x="210" y="572" text-anchor="middle" font-size="13" fill="#334155">60 g · Rs 14</text>
+    <circle cx="276" cy="538" r="8" fill="#16A34A"/>
+    <rect x="84" y="676" width="252" height="32" rx="16" fill="#DBEAFE"/>
+    <text x="210" y="698" text-anchor="middle" font-size="14" font-weight="700" fill="#1E40AF">2–5 angles merged</text>
+    <circle cx="210" cy="762" r="8" fill="#0F172A"/>
+  </g>
+
+  <!-- Card 2 -->
+  <g>
+    <rect x="404" y="172" width="340" height="610" rx="18" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
+    <rect x="404" y="172" width="340" height="26" rx="13" fill="#0891B2"/>
+    <rect x="404" y="185" width="340" height="13" fill="#0891B2"/>
+    <g transform="translate(574,290)" stroke="#0891B2" stroke-width="7" fill="none" stroke-linecap="round">
+      <line x1="-40" y1="-20" x2="40" y2="-20"/><circle cx="0" cy="-20" r="9" fill="#fff"/>
+      <line x1="-40" y1="0" x2="40" y2="0"/><circle cx="-10" cy="0" r="9" fill="#fff"/>
+      <line x1="-40" y1="20" x2="40" y2="20"/><circle cx="10" cy="20" r="9" fill="#fff"/>
+    </g>
+    <text x="574" y="392" text-anchor="middle" font-size="20" font-weight="800" fill="#0891B2">2 · CLEAN IT UP</text>
+    <text x="574" y="418" text-anchor="middle" font-size="17" fill="#334155">Straighten tilt.</text>
+    <text x="574" y="442" text-anchor="middle" font-size="17" fill="#334155">Remove glare + shadows.</text>
+    <rect x="428" y="466" width="292" height="200" rx="14" fill="#F1F5F9"/>
+    <text x="574" y="570" text-anchor="middle" font-size="54" fill="#F59E0B">★ ★ ★</text>
+    <text x="574" y="620" text-anchor="middle" font-size="15" fill="#475569">flat · bright · sharp</text>
+    <rect x="448" y="676" width="252" height="32" rx="16" fill="#CFFAFE"/>
+    <text x="574" y="698" text-anchor="middle" font-size="14" font-weight="700" fill="#0E7490">tilt ≤ 10° to shoot</text>
+    <circle cx="574" cy="762" r="8" fill="#0F172A"/>
+  </g>
+
+  <!-- Card 3 -->
+  <g>
+    <rect x="768" y="172" width="340" height="610" rx="18" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
+    <rect x="768" y="172" width="340" height="26" rx="13" fill="#0D9488"/>
+    <rect x="768" y="185" width="340" height="13" fill="#0D9488"/>
+    <g transform="translate(938,290)" stroke="#0D9488" stroke-width="7" fill="none">
+      <path d="M-52,0 C-30,-28 30,-28 52,0 C30,28 -30,28 -52,0 Z"/>
+      <circle cx="0" cy="0" r="12" fill="#0D9488" stroke="none"/><circle cx="0" cy="0" r="5" fill="#fff" stroke="none"/>
+    </g>
+    <text x="938" y="392" text-anchor="middle" font-size="20" font-weight="800" fill="#0D9488">3 · READ WORDS</text>
+    <text x="938" y="418" text-anchor="middle" font-size="17" fill="#334155">Two AI readers read</text>
+    <text x="938" y="442" text-anchor="middle" font-size="17" fill="#334155">every single word.</text>
+    <rect x="792" y="466" width="292" height="200" rx="14" fill="#F1F5F9"/>
+    <g font-size="12" font-weight="700" text-anchor="middle">
+      <rect x="808" y="494" width="130" height="42" rx="10" fill="#fff" stroke="#0D9488" stroke-width="2"/><text x="873" y="520" fill="#0F172A">MRP Rs 14</text>
+      <rect x="942" y="494" width="130" height="42" rx="10" fill="#fff" stroke="#0D9488" stroke-width="2"/><text x="1007" y="520" fill="#0F172A">60 g</text>
+      <rect x="808" y="540" width="130" height="42" rx="10" fill="#fff" stroke="#0D9488" stroke-width="2"/><text x="873" y="566" fill="#0F172A">JAN 2025</text>
+      <rect x="942" y="540" width="130" height="42" rx="10" fill="#fff" stroke="#0D9488" stroke-width="2"/><text x="1007" y="566" fill="#0F172A">1800-123</text>
+    </g>
+    <text x="938" y="620" text-anchor="middle" font-size="15" fill="#475569">every word boxed</text>
+    <rect x="812" y="676" width="252" height="32" rx="16" fill="#CCFBF1"/>
+    <text x="938" y="698" text-anchor="middle" font-size="14" font-weight="700" fill="#0F766E">349 words on this pack</text>
+    <circle cx="938" cy="762" r="8" fill="#0F172A"/>
+  </g>
+
+  <!-- Card 4 -->
+  <g>
+    <rect x="1132" y="172" width="340" height="610" rx="18" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
+    <rect x="1132" y="172" width="340" height="26" rx="13" fill="#D97706"/>
+    <rect x="1132" y="185" width="340" height="13" fill="#D97706"/>
+    <g transform="translate(1302,290)" fill="#D97706">
+      <path d="M-48,-20 H20 L52,0 L20,20 H-48 Z"/>
+      <ellipse cx="-26" cy="0" rx="10" ry="7" fill="#fff"/>
+    </g>
+    <text x="1302" y="392" text-anchor="middle" font-size="20" font-weight="800" fill="#B45309">4 · FIND DETAILS</text>
+    <text x="1302" y="418" text-anchor="middle" font-size="17" fill="#334155">Price, weight, dates,</text>
+    <text x="1302" y="442" text-anchor="middle" font-size="17" fill="#334155">maker, helpline.</text>
+    <rect x="1156" y="466" width="292" height="200" rx="14" fill="#F1F5F9"/>
+    <g font-size="15">
+      <text x="1172" y="512" fill="#64748B">Price</text><text x="1432" y="512" text-anchor="end" font-weight="800" fill="#0F172A">Rs 14</text>
+      <text x="1172" y="548" fill="#64748B">Weight</text><text x="1432" y="548" text-anchor="end" font-weight="800" fill="#0F172A">60 g</text>
+      <text x="1172" y="584" fill="#64748B">Made</text><text x="1432" y="584" text-anchor="end" font-weight="800" fill="#0F172A">JAN 25</text>
+      <text x="1302" y="620" text-anchor="middle" font-size="14" fill="#475569">+ maker + helpline</text>
+    </g>
+    <rect x="1176" y="676" width="252" height="32" rx="16" fill="#FEF3C7"/>
+    <text x="1302" y="698" text-anchor="middle" font-size="14" font-weight="700" fill="#92400E">7 details hunted</text>
+    <circle cx="1302" cy="762" r="8" fill="#0F172A"/>
+  </g>
+
+  <!-- Card 5 -->
+  <g>
+    <rect x="1496" y="172" width="340" height="610" rx="18" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
+    <rect x="1496" y="172" width="340" height="26" rx="13" fill="#16A34A"/>
+    <rect x="1496" y="185" width="340" height="13" fill="#16A34A"/>
+    <g transform="translate(1666,290)">
+      <path d="M-36,-24 L0,-34 L36,-24 L36,4 C36,22 18,34 0,40 C-18,34 -36,22 -36,4 Z" fill="#16A34A"/>
+      <polyline points="-14,6 -4,16 16,-4" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="1666" y="392" text-anchor="middle" font-size="20" font-weight="800" fill="#16A34A">5 · GIVE REPORT</text>
+    <text x="1666" y="418" text-anchor="middle" font-size="17" fill="#334155">10 rule checks.</text>
+    <text x="1666" y="442" text-anchor="middle" font-size="17" fill="#334155">Officer says OK.</text>
+    <rect x="1520" y="466" width="292" height="200" rx="14" fill="#F1F5F9"/>
+    <rect x="1536" y="484" width="260" height="60" rx="14" fill="#16A34A"/>
+    <text x="1570" y="521" font-size="28" fill="#fff">✓</text>
+    <text x="1710" y="521" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">COMPLIANT</text>
+    <text x="1666" y="576" text-anchor="middle" font-size="14" fill="#475569">PDF report ready</text>
+    <text x="1666" y="600" text-anchor="middle" font-size="14" font-style="italic" fill="#475569">officer confirmed</text>
+    <rect x="1540" y="676" width="252" height="32" rx="16" fill="#DCFCE7"/>
+    <text x="1666" y="698" text-anchor="middle" font-size="14" font-weight="700" fill="#15803D">PDF in one tap</text>
+    <circle cx="1666" cy="762" r="8" fill="#0F172A"/>
+  </g>
+
+  <!-- Arrows between cards with high-contrast labels -->
+  <g font-size="13" font-weight="700" fill="#fff">
+    <line x1="380" y1="520" x2="404" y2="520" stroke="#0F172A" stroke-width="4" marker-end="url(#arr)"/>
+    <rect x="336" y="470" width="68" height="26" rx="6" fill="#0F172A"/><text x="370" y="488" text-anchor="middle">photo</text>
+    <line x1="744" y1="520" x2="768" y2="520" stroke="#0F172A" stroke-width="4" marker-end="url(#arr)"/>
+    <rect x="684" y="470" width="118" height="26" rx="6" fill="#0F172A"/><text x="743" y="488" text-anchor="middle">clean photo</text>
+    <line x1="1108" y1="520" x2="1132" y2="520" stroke="#0F172A" stroke-width="4" marker-end="url(#arr)"/>
+    <rect x="1052" y="470" width="118" height="26" rx="6" fill="#0F172A"/><text x="1111" y="488" text-anchor="middle">all the words</text>
+    <line x1="1472" y1="520" x2="1496" y2="520" stroke="#0F172A" stroke-width="4" marker-end="url(#arr)"/>
+    <rect x="1428" y="470" width="96" height="26" rx="6" fill="#0F172A"/><text x="1476" y="488" text-anchor="middle">the details</text>
+  </g>
+
+  <!-- DATA HIGHWAY -->
+  <rect x="40" y="806" width="1840" height="76" rx="16" fill="#EFF6FF" stroke="#0B1F3A" stroke-width="2.5"/>
+  <text x="960" y="832" text-anchor="middle" font-size="15" font-weight="800" letter-spacing="1" fill="#0B1F3A">DATA HIGHWAY · EVERYTHING STAYS ON YOUR LAPTOP</text>
+  <g font-size="15" font-weight="700">
+    <rect x="160" y="842" width="110" height="28" rx="6" fill="#fff" stroke="#0B1F3A" stroke-width="1.5"/><text x="215" y="862" text-anchor="middle" fill="#0F172A">photo in</text>
+    <rect x="500" y="842" width="130" height="28" rx="6" fill="#fff" stroke="#0B1F3A" stroke-width="1.5"/><text x="565" y="862" text-anchor="middle" fill="#0F172A">clean pixels</text>
+    <rect x="860" y="842" width="120" height="28" rx="6" fill="#fff" stroke="#0B1F3A" stroke-width="1.5"/><text x="920" y="862" text-anchor="middle" fill="#0F172A">349 words</text>
+    <rect x="1210" y="842" width="100" height="28" rx="6" fill="#fff" stroke="#0B1F3A" stroke-width="1.5"/><text x="1260" y="862" text-anchor="middle" fill="#0F172A">7 fields</text>
+    <rect x="1550" y="842" width="150" height="28" rx="6" fill="#fff" stroke="#0B1F3A" stroke-width="1.5"/><text x="1625" y="862" text-anchor="middle" fill="#0F172A">verdict + PDF</text>
+  </g>
+  <g stroke="#0B1F3A" stroke-width="3" marker-end="url(#arr)">
+    <line x1="300" y1="856" x2="470" y2="856"/><line x1="660" y1="856" x2="830" y2="856"/>
+    <line x1="1010" y1="856" x2="1180" y2="856"/><line x1="1340" y1="856" x2="1520" y2="856"/>
+  </g>
+
+  <!-- Tech strip - 7 boxes -->
+  <rect x="40" y="890" width="1840" height="130" rx="16" fill="#FFFFFF" stroke="#0B1F3A" stroke-width="2.5"/>
+  <g font-family="'Segoe UI', Inter, Arial, sans-serif">
+    <g><rect x="52" y="902" width="250" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="140" y="936" text-anchor="middle" font-size="24">☰</text><text x="182" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">OpenCV</text><text x="182" y="954" text-anchor="middle" font-size="13" fill="#475569">cleans the photo</text><line x1="177" y1="882" x2="177" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="177" cy="884" r="6" fill="#0F172A"/></g>
+    <g><rect x="314" y="902" width="250" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="402" y="936" text-anchor="middle" font-size="24">☰</text><text x="444" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">Tesseract OCR</text><text x="444" y="954" text-anchor="middle" font-size="13" fill="#475569">reads the words</text><line x1="439" y1="882" x2="439" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="439" cy="884" r="6" fill="#0F172A"/></g>
+    <g><rect x="576" y="902" width="250" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="664" y="936" text-anchor="middle" font-size="24">👁</text><text x="706" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">Florence-2 vision</text><text x="706" y="954" text-anchor="middle" font-size="13" fill="#475569">sees tough packs</text><line x1="701" y1="882" x2="701" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="701" cy="884" r="6" fill="#0F172A"/></g>
+    <g><rect x="838" y="902" width="250" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="926" y="936" text-anchor="middle" font-size="24">➤</text><text x="968" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">spaCy NER</text><text x="968" y="954" text-anchor="middle" font-size="13" fill="#475569">finds price + dates</text><line x1="963" y1="882" x2="963" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="963" cy="884" r="6" fill="#0F172A"/></g>
+    <g><rect x="1100" y="902" width="250" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="1188" y="936" text-anchor="middle" font-size="24">⚡</text><text x="1230" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">FastAPI</text><text x="1230" y="954" text-anchor="middle" font-size="13" fill="#475569">serves the brain</text><line x1="1225" y1="882" x2="1225" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="1225" cy="884" r="6" fill="#0F172A"/></g>
+    <g><rect x="1362" y="902" width="250" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="1450" y="936" text-anchor="middle" font-size="24">🌐</text><text x="1492" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">Next.js</text><text x="1492" y="954" text-anchor="middle" font-size="13" fill="#475569">dashboard you click</text><line x1="1487" y1="882" x2="1487" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="1487" cy="884" r="6" fill="#0F172A"/></g>
+    <g><rect x="1624" y="902" width="244" height="106" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/><text x="1710" y="936" text-anchor="middle" font-size="24">🗄</text><text x="1752" y="932" text-anchor="middle" font-size="15" font-weight="800" fill="#0F172A">PostgreSQL</text><text x="1752" y="954" text-anchor="middle" font-size="13" fill="#475569">remembers scans</text><line x1="1749" y1="882" x2="1749" y2="902" stroke="#0F172A" stroke-width="2"/><circle cx="1749" cy="884" r="6" fill="#0F172A"/></g>
+  </g>
+
+  <!-- Golden rule -->
+  <rect x="40" y="1028" width="1840" height="52" rx="12" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="960" y="1061" text-anchor="middle" font-size="19" font-weight="800" fill="#92400E">And the golden rule: if the app cannot check something, it never calls it passed.</text>
+</svg>

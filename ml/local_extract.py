@@ -71,7 +71,7 @@ def extract_label(image_bytes: bytes, ppm: float | None = None) -> dict:
             min_letter_height_mm=font_mm,
             min_width_to_height_ratio=round(med_ratio, 3) if med_ratio else None,
         )
-    report = evaluate_compliance(decl, ocr_confidence=ocr.confidence or None)
+    report = evaluate_compliance(decl, ocr_confidence=ocr.confidence)
     decl_d = dataclasses.asdict(decl)
     for k in ("mfg_date", "expiry_date"):
         decl_d[k] = decl_d[k].isoformat() if decl_d[k] else None

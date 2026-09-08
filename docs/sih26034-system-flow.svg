@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" font-family="'Segoe UI', Inter, Arial, sans-serif" role="img" aria-label="SIH26034 Legal Metrology Compliance System - Industry Grade Flow">
+<defs>
+<marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><polygon points="0,0 9,5 0,10" fill="#0A1931"/></marker>
+<marker id="aw" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><polygon points="0,0 9,5 0,10" fill="#FFFFFF"/></marker>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" fill="#F1F5F9"/>
+<!-- Header -->
+<rect x="0" y="0" width="1920" height="132" fill="#0A1931"/>
+<rect x="0" y="128" width="1920" height="4" fill="#FF9933"/>
+<text x="36" y="52" font-size="30" font-weight="800" fill="#FFFFFF">SIH26034 · DoCA Packaged Commodities Compliance Scanner</text>
+<text x="36" y="86" font-size="16" fill="#CBD5E1">Legal Metrology Act, 2009 + Packaged Commodities Rules, 2011 · Rule 6 declarations · Rule 7 font-size · 100% CPU · Offline-first</text>
+<g><rect x="1490" y="28" width="130" height="36" rx="18" fill="none" stroke="#FF9933" stroke-width="2"/><text x="1555" y="52" text-anchor="middle" font-size="14" font-weight="800" fill="#FF9933">CPU-ONLY</text>
+<rect x="1630" y="28" width="130" height="36" rx="18" fill="#FF9933"/><text x="1695" y="52" text-anchor="middle" font-size="14" font-weight="800" fill="#0A1931">SIH 2026</text>
+<rect x="1490" y="70" width="270" height="36" rx="18" fill="#138808"/><text x="1625" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">OFFICER-IN-LOOP · NEVER FALSE PASS</text></g>
+
+<!-- Lanes -->
+<!-- L1 Capture -->
+<g>
+<rect x="24" y="152" width="350" height="800" rx="16" fill="#FFFFFF" stroke="#0A1931" stroke-width="2"/>
+<rect x="24" y="152" width="350" height="52" rx="16" fill="#0A1931"/><rect x="24" y="180" width="350" height="24" fill="#0A1931"/>
+<text x="199" y="185" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">1 · CAPTURE · Next.js 16</text>
+<g font-size="13.5" fill="#334155">
+<rect x="40" y="220" width="318" height="104" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="56" y="246" font-weight="800" fill="#0A1931">Guided camera + upload</text><text x="56" y="268">Context + macro shots</text><text x="56" y="288">Tilt ≤10° gyro guard</text><text x="56" y="308">JPG/PNG ≤10MB validated</text>
+<rect x="40" y="332" width="318" height="88" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="56" y="358" font-weight="800" fill="#0A1931">Auth + trace</text><text x="56" y="380">JWT + bcrypt · Officer/Admin</text><text x="56" y="400">X-Request-ID per scan</text>
+<rect x="40" y="428" width="318" height="120" rx="10" fill="#FFF7ED" stroke="#FDBA74"/><text x="56" y="454" font-weight="800" fill="#9A3412">PS covers →</text><text x="56" y="476">image upload + scanning</text><text x="56" y="496">role access + evidence</text><text x="56" y="516">photo attached to report</text>
+</g>
+<rect x="40" y="562" width="318" height="70" rx="10" fill="#0A1931"/><text x="199" y="588" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">React 19 · Tailwind</text><text x="199" y="610" text-anchor="middle" font-size="12" fill="#CBD5E1">dashboard · history · search</text>
+<text x="199" y="670" text-anchor="middle" font-size="12" fill="#64748B">POST /api/v1/scans</text>
+<text x="199" y="700" text-anchor="middle" font-size="28" fill="#0A1931">↓</text>
+<rect x="40" y="712" width="318" height="110" rx="10" fill="#EFF6FF" stroke="#0A1931" stroke-dasharray="8 6"/><text x="199" y="738" text-anchor="middle" font-size="13" font-weight="800" fill="#0A1931">Evidence sealed</text><text x="199" y="760" text-anchor="middle" font-size="12" fill="#334155">original + clean image</text><text x="199" y="780" text-anchor="middle" font-size="12" fill="#334155">GPS (if allowed) + timestamp</text>
+<rect x="40" y="834" width="318" height="94" rx="10" fill="#F1F5F9" stroke="#CBD5E1"/><text x="199" y="860" text-anchor="middle" font-size="12" font-weight="800" fill="#0A1931">OUT → clean bytes + ppm hint</text><text x="199" y="882" text-anchor="middle" font-size="12" fill="#475569">to Vision lane →</text>
+</g>
+
+<!-- L2 Vision -->
+<g>
+<rect x="398" y="152" width="364" height="800" rx="16" fill="#FFFFFF" stroke="#0A1931" stroke-width="2"/>
+<rect x="398" y="152" width="364" height="52" rx="16" fill="#1E40AF"/><rect x="398" y="180" width="364" height="24" fill="#1E40AF"/>
+<text x="580" y="185" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">2 · VISION · OpenCV</text>
+<g font-size="13.5" fill="#334155">
+<rect x="414" y="220" width="332" height="124" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="430" y="246" font-weight="800" fill="#0A1931">Preprocess (opencv-headless)</text><text x="430" y="268">deskew · denoise · CLAHE</text><text x="430" y="288">ESPCN/FSRCNN upscale → cubic</text><text x="430" y="308">fallback, never crashes</text>
+<rect x="414" y="352" width="332" height="124" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="430" y="378" font-weight="800" fill="#0A1931">Measure (Rule 7 input)</text><text x="430" y="400">85.6mm card → PPM</text><text x="430" y="420">font_mm = px / PPM</text><text x="430" y="440">width/height ratio check</text>
+<rect x="414" y="484" width="332" height="88" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="430" y="510" font-weight="800" fill="#0A1931">De-hallucinate</text><text x="430" y="532">zxing-cpp barcode mask</text><text x="430" y="552">paint white over bars</text>
+</g>
+<rect x="414" y="586" width="332" height="70" rx="10" fill="#1E40AF"/><text x="580" y="612" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">vision.py · 356 lines</text><text x="580" y="634" text-anchor="middle" font-size="12" fill="#DBEAFE">NumPy + CPU only</text>
+<text x="580" y="680" text-anchor="middle" font-size="12" fill="#64748B">clean pixels + PPM + boxes</text>
+<text x="580" y="700" text-anchor="middle" font-size="28" fill="#0A1931">↓</text>
+<rect x="414" y="712" width="332" height="110" rx="10" fill="#EFF6FF" stroke="#1E40AF" stroke-dasharray="8 6"/><text x="580" y="738" text-anchor="middle" font-size="13" font-weight="800" fill="#0A1931">PS covers →</text><text x="580" y="760" text-anchor="middle" font-size="12" fill="#334155">font-size + readability</text><text x="580" y="780" text-anchor="middle" font-size="12" fill="#334155">placement via bounding boxes</text>
+<rect x="414" y="834" width="332" height="94" rx="10" fill="#F1F5F9" stroke="#CBD5E1"/><text x="580" y="860" text-anchor="middle" font-size="12" font-weight="800" fill="#0A1931">&lt;5s / image on laptop</text><text x="580" y="882" text-anchor="middle" font-size="12" fill="#475569">Intel Core Ultra 5, no GPU</text>
+</g>
+
+<!-- L3 Read -->
+<g>
+<rect x="786" y="152" width="364" height="800" rx="16" fill="#FFFFFF" stroke="#0A1931" stroke-width="2"/>
+<rect x="786" y="152" width="364" height="52" rx="16" fill="#0D9488"/><rect x="786" y="180" width="364" height="24" fill="#0D9488"/>
+<text x="968" y="185" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">3 · READ · OCR + NER</text>
+<g font-size="13.5" fill="#334155">
+<rect x="802" y="220" width="332" height="124" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="818" y="246" font-weight="800" fill="#0A1931">Tesseract (primary, CPU)</text><text x="818" y="268">every word + confidence</text><text x="818" y="288">Florence-2 2nd opinion</text><text x="818" y="308">for tough packs (optional)</text>
+<rect x="802" y="352" width="332" height="144" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="818" y="378" font-weight="800" fill="#0A1931">Extract 7 fields</text><text x="818" y="400">regex + spaCy + RapidFuzz</text><text x="818" y="420">MRP · qty · dates · maker</text><text x="818" y="440">generic · care · origin</text><text x="818" y="460">addr + non-std dates OK</text>
+<rect x="802" y="504" width="332" height="68" rx="10" fill="#FEF2F2" stroke="#FCA5A5"/><text x="968" y="530" text-anchor="middle" font-weight="800" fill="#991B1B">conf &lt;60% → possible_miss</text><text x="968" y="552" text-anchor="middle" font-size="12" fill="#7F1D1D">never guess → ask retake</text>
+</g>
+<rect x="802" y="586" width="332" height="70" rx="10" fill="#0D9488"/><text x="968" y="612" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">ocr.py · extraction.py</text><text x="968" y="634" text-anchor="middle" font-size="12" fill="#CCFBF1">transformers 4.47 · gazetteer</text>
+<text x="968" y="680" text-anchor="middle" font-size="12" fill="#64748B">349 words → 7 declarations</text>
+<text x="968" y="700" text-anchor="middle" font-size="28" fill="#0A1931">↓</text>
+<rect x="802" y="712" width="332" height="110" rx="10" fill="#EFF6FF" stroke="#0D9488" stroke-dasharray="8 6"/><text x="968" y="738" text-anchor="middle" font-size="13" font-weight="800" fill="#0A1931">PS covers →</text><text x="968" y="760" text-anchor="middle" font-size="12" fill="#334155">detect mandatory declarations</text><text x="968" y="780" text-anchor="middle" font-size="12" fill="#334155">missing / misleading / non-std</text>
+<rect x="802" y="834" width="332" height="94" rx="10" fill="#F1F5F9" stroke="#CBD5E1"/><text x="968" y="860" text-anchor="middle" font-size="12" font-weight="800" fill="#0A1931">ProductDeclaration schema</text><text x="968" y="882" text-anchor="middle" font-size="12" fill="#475569">Pydantic-validated, typed</text>
+</g>
+
+<!-- L4 Legal -->
+<g>
+<rect x="1174" y="152" width="364" height="800" rx="16" fill="#FFF7ED" stroke="#9A3412" stroke-width="2.5"/>
+<rect x="1174" y="152" width="364" height="52" rx="16" fill="#9A3412"/><rect x="1174" y="180" width="364" height="24" fill="#9A3412"/>
+<text x="1356" y="185" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">4 · LEGAL BRAIN · Rules 2011</text>
+<g font-size="13" fill="#431407">
+<rect x="1190" y="220" width="332" height="144" rx="10" fill="#fff" stroke="#FDBA74"/><text x="1206" y="246" font-weight="800" fill="#9A3412">Rule 6 — completeness</text><text x="1206" y="268">6(1)(a) maker + address</text><text x="1206" y="288">6(1)(b) generic name</text><text x="1206" y="308">6(1)(c) net qty + SI unit</text><text x="1206" y="328">6(1)(d) month/year · 6(1)(e) MRP</text><text x="1206" y="348">+ care + origin (import)</text>
+<rect x="1190" y="372" width="332" height="124" rx="10" fill="#fff" stroke="#FDBA74"/><text x="1206" y="398" font-weight="800" fill="#9A3412">Rule 7 — legibility</text><text x="1206" y="420">T-I (wt/vol): 1/2/4 mm</text><text x="1206" y="440">T-II (area): 1/2/4/6 mm</text><text x="1206" y="460">letters ≥1mm, W ≥ H/3</text><text x="1206" y="480">embossed ×2 · verified pp.8-9</text>
+</g>
+<g font-size="12" font-weight="800" text-anchor="middle">
+<rect x="1190" y="508" width="104" height="64" rx="10" fill="#16A34A"/><text x="1242" y="534" fill="#fff">PASS</text><text x="1242" y="552" font-size="10" fill="#fff">COMPLIANT</text>
+<rect x="1300" y="508" width="104" height="64" rx="10" fill="#DC2626"/><text x="1352" y="534" fill="#fff">FAIL</text><text x="1352" y="552" font-size="10" fill="#fff">NON-COMPL.</text>
+<rect x="1410" y="508" width="98" height="64" rx="10" fill="#F59E0B"/><text x="1459" y="534" fill="#0A1931">HOLD</text><text x="1459" y="552" font-size="10" fill="#0A1931">INCOMPLETE</text>
+</g>
+<rect x="1190" y="586" width="332" height="70" rx="10" fill="#9A3412"/><text x="1356" y="612" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">rule_engine.py · 592 lines</text><text x="1356" y="634" text-anchor="middle" font-size="12" fill="#FED7AA">deterministic · 592 tests</text>
+<text x="1356" y="680" text-anchor="middle" font-size="12" fill="#92400E">cause + why + next_steps</text>
+<text x="1356" y="700" text-anchor="middle" font-size="28" fill="#0A1931">↓</text>
+<rect x="1190" y="712" width="332" height="110" rx="10" fill="#fff" stroke="#9A3412" stroke-dasharray="8 6"/><text x="1356" y="738" text-anchor="middle" font-size="13" font-weight="800" fill="#9A3412">PS covers →</text><text x="1356" y="760" text-anchor="middle" font-size="12" fill="#431407">correctness + completeness</text><text x="1356" y="780" text-anchor="middle" font-size="12" fill="#431407">violation summary per clause</text>
+<rect x="1190" y="834" width="332" height="94" rx="10" fill="#0A1931"/><text x="1356" y="860" text-anchor="middle" font-size="12" font-weight="800" fill="#FF9933">GOLDEN RULE</text><text x="1356" y="882" text-anchor="middle" font-size="11" fill="#fff">unmeasured → NOT_ASSESSABLE</text><text x="1356" y="900" text-anchor="middle" font-size="11" fill="#fff">never silent PASS</text>
+</g>
+
+<!-- L5 Trust -->
+<g>
+<rect x="1562" y="152" width="334" height="800" rx="16" fill="#FFFFFF" stroke="#0A1931" stroke-width="2"/>
+<rect x="1562" y="152" width="334" height="52" rx="16" fill="#138808"/><rect x="1562" y="180" width="334" height="24" fill="#138808"/>
+<text x="1729" y="185" text-anchor="middle" font-size="16" font-weight="800" fill="#fff">5 · TRUST · Serve</text>
+<g font-size="13.5" fill="#334155">
+<rect x="1578" y="220" width="302" height="104" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="1594" y="246" font-weight="800" fill="#0A1931">FastAPI · /api/v1</text><text x="1594" y="268">structlog + rate-limit</text><text x="1594" y="288">OpenAPI /docs live</text><text x="1594" y="308">Docker: 8000 → 3000 → PG16</text>
+<rect x="1578" y="332" width="302" height="124" rx="10" fill="#F0FDF4" stroke="#86EFAC"/><text x="1594" y="358" font-weight="800" fill="#166534">Officer-in-loop (must)</text><text x="1594" y="380">confirm / correct / override</text><text x="1594" y="400">nothing final without OK</text><text x="1594" y="420">audit trail in Postgres</text><text x="1594" y="440">SQLAlchemy ORM, safe</text>
+<rect x="1578" y="464" width="302" height="108" rx="10" fill="#F8FAFC" stroke="#CBD5E1"/><text x="1594" y="490" font-weight="800" fill="#0A1931">Reports + dashboard</text><text x="1594" y="512">PDF (ReportLab) + JSON/CSV</text><text x="1594" y="532">violations · trends · search</text><text x="1594" y="552">recharts tables + history</text>
+</g>
+<rect x="1578" y="586" width="302" height="70" rx="10" fill="#138808"/><text x="1729" y="612" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">PostgreSQL 16</text><text x="1729" y="634" text-anchor="middle" font-size="12" fill="#DCFCE7">repository of scans</text>
+<text x="1729" y="680" text-anchor="middle" font-size="12" fill="#64748B">verdict + PDF + evidence</text>
+<text x="1729" y="700" text-anchor="middle" font-size="28" fill="#0A1931">↓</text>
+<rect x="1578" y="712" width="302" height="110" rx="10" fill="#EFF6FF" stroke="#138808" stroke-dasharray="8 6"/><text x="1729" y="738" text-anchor="middle" font-size="13" font-weight="800" fill="#0A1931">PS covers →</text><text x="1729" y="760" text-anchor="middle" font-size="12" fill="#334155">dashboard · repository</text><text x="1729" y="780" text-anchor="middle" font-size="12" fill="#334155">search + PDF + editable</text>
+<rect x="1578" y="834" width="302" height="94" rx="10" fill="#F1F5F9" stroke="#CBD5E1"/><text x="1729" y="860" text-anchor="middle" font-size="12" font-weight="800" fill="#0A1931">CI: pytest · mypy · ruff</text><text x="1729" y="882" text-anchor="middle" font-size="12" fill="#475569">compose up --build</text>
+</g>
+
+<!-- Data flow arrows top -->
+<g stroke="#0A1931" stroke-width="3.5" marker-end="url(#a)">
+<line x1="374" y1="420" x2="398" y2="420"/><line x1="762" y1="420" x2="786" y2="420"/>
+<line x1="1150" y1="420" x2="1174" y2="420"/><line x1="1538" y1="420" x2="1562" y2="420"/>
+</g>
+
+<!-- Footer cross-cutting -->
+<rect x="24" y="962" width="1872" height="94" rx="12" fill="#0A1931"/>
+<text x="60" y="990" font-size="13" font-weight="800" fill="#FF9933">CROSS-CUTTING:</text>
+<text x="220" y="990" font-size="13" fill="#fff">structlog JSON · X-Request-ID · slowapi limits · CORS · Pydantic validation · bcrypt · .env secrets · pytest edge-cases (blur/corrupt/missing) · GitHub Actions · docs/architecture · rule-mapping · deployment</text>
+<text x="60" y="1016" font-size="13" fill="#CBD5E1">Explain in 30s: Photo → Clean+Measure → Read 7 fields → Check Rule 6 + Rule 7 → Officer OK → PDF. If unreadable, system says INCOMPLETE and asks for macro retake — it never declares COMPLIANT on a guess.</text>
+<text x="60" y="1040" font-size="11" fill="#94A3B8">Stack: Next.js 16 · React 19 · FastAPI 0.115 · PostgreSQL 16 · SQLAlchemy 2 · OpenCV-headless 4.10 · Tesseract · Florence-2 (trans. 4.47) · spaCy + RapidFuzz · ReportLab 5 · Docker Compose</text>
+</svg>

@@ -40,6 +40,11 @@ class CheckOut(BaseModel):
     severity: str = "info"
     remedy: str | None = None
     manual: bool = False  # officer-attested override of the machine finding
+    # Failure guidance: why this outcome happened + exact next steps.
+    # cause: "" | genuine | likely_genuine | possible_miss | unmeasured
+    cause: str = ""
+    why: str = ""
+    next_steps: list[str] = []
 
 
 class ComplianceOut(BaseModel):

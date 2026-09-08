@@ -98,6 +98,12 @@ class CheckResult:
     severity: str = "blocking"  # blocking | review | info
     remedy: str | None = None
     source_ref: str = ""
+    # Failure guidance (failure_guide.annotate_failure): why this outcome
+    # happened and the exact next steps. cause is "" on PASS, else one of
+    # genuine | likely_genuine | possible_miss | unmeasured.
+    cause: str = ""
+    why: str = ""
+    next_steps: tuple[str, ...] = ()
     manual: bool = False  # True when an officer attested/edited this finding
 
     @property
@@ -537,24 +543,36 @@ def evaluate_compliance(d: ProductDeclaration, ocr_confidence: float | None = No
     """ocr_confidence MUST be on the raw Tesseract 0–100 scale (see _mean_confidence).
 
     Regression-pinned by tests/test_confidence_scale.py — do not pass a 0–1 score here.
+
+    A detection miss is not a proven violation: NOT_FOUND outcomes on a weak
+    read (<60%) are annotated cause="possible_miss" and fold the verdict to
+    INCOMPLETE (verify, don't condemn). Typed/manual declarations
+    (ocr_confidence=None) and clear reads keep the strict verdict.
     """
+    from app.services.failure_guide import LOW_READ_CONFIDENCE, annotate_failure
+
     if d.min_numeral_height_mm is None and d.min_font_height_mm is not None:
         d = dataclasses.replace(d, min_numeral_height_mm=d.min_font_height_mm)
     results = [
-        check_manufacturer(d),
-        check_generic_name(d),
-        check_net_quantity(d),
-        check_mrp(d),
-        check_dates(d),
-        check_consumer_care(d),
-        check_origin(d),
-        check_numeral_height(d),
-        check_letter_height(d),
-        check_width_ratio(d),
+        annotate_failure(r, ocr_confidence)
+        for r in (
+            check_manufacturer(d),
+            check_generic_name(d),
+            check_net_quantity(d),
+            check_mrp(d),
+            check_dates(d),
+            check_consumer_care(d),
+            check_origin(d),
+            check_numeral_height(d),
+            check_letter_height(d),
+            check_width_ratio(d),
+        )
     ]
-    if any(r.status in BLOCKING for r in results):
+    genuine_blocking = [r for r in results if r.status in BLOCKING and r.cause != "possible_miss"]
+    missed_blocking = [r for r in results if r.status in BLOCKING and r.cause == "possible_miss"]
+    if genuine_blocking:
         verdict = "NON_COMPLIANT"
-    elif any(r.status == Status.NOT_ASSESSABLE for r in results):
+    elif missed_blocking or any(r.status == Status.NOT_ASSESSABLE for r in results):
         verdict = "INCOMPLETE"
     else:
         verdict = "COMPLIANT"
@@ -563,5 +581,12 @@ def evaluate_compliance(d: ProductDeclaration, ocr_confidence: float | None = No
         warnings.append(
             f"Low OCR confidence ({ocr_confidence}%) — label may be illegible; "
             "verify declarations on the physical package (legibility warning)"
+        )
+    if missed_blocking and ocr_confidence is not None:
+        missed_ids = ", ".join(r.rule_id for r in missed_blocking)
+        warnings.append(
+            f"{len(missed_blocking)} declaration(s) not detected on a weak read "
+            f"({ocr_confidence:g}% < {LOW_READ_CONFIDENCE:g}%): {missed_ids} — marked "
+            "incomplete, NOT non-compliant. Retake close-ups and verify on the package."
         )
     return ComplianceReport(verdict=verdict, results=results, warnings=warnings)

@@ -1,13 +1,147 @@
 """Printable PDF compliance report (ReportLab, CPU-only).
 
-Contents: header (ids, engine, verdict, review, timestamps, GPS), rule table
-with observed/expected captured values, annotated photo evidence (capture +
-OCR boxes), warnings, and an enforcement summary. No raw OCR text dump.
+Sample-locked layout (docs: DrishtiLM_Sample_Report.pdf):
+running header (brand + ids + page), CASE DETAILS box, verdict banner with
+counts, 5-column RULE-WISE FINDINGS (short refs like 6.1(e) / 2(m)), advisory
+ENFORCEMENT SUMMARY with per-failure Why + numbered next steps, annotated
+VISUAL EVIDENCE, OFFICER REVIEW & SIGN-OFF box, integrity ID. No raw OCR dump.
 """
 
 from __future__ import annotations
 
 import io
+import re
+from datetime import UTC, datetime
+
+from reportlab.lib.units import mm
+
+# Short refs + requirement text for the findings table. Rule 7 numeral/letter
+# rows are dynamic (tier basis comes from the expected string).
+_RULE_LABELS = {
+    "LMPC-6.1-manufacturer": ("6.1(a)", "Manufacturer name & address"),
+    "LMPC-6.1-generic": ("6.1(b)", "Generic / common name"),
+    "LMPC-6.1-netqty": ("6.1(c)", "Net quantity"),
+    "LMPC-6.1-mrp": ("6.1(e) / 2(m)", "MRP inclusive of all taxes"),
+    "LMPC-6.1-dates": ("6.1(d)", "Date of manufacture / packing"),
+    "LMPC-6.1-care": ("6.1", "Consumer care details"),
+    "LMPC-6.1-origin": ("6.1", "Country of origin"),
+    "LMPC-7.3-width": ("7.3", "Letter width / height ratio"),
+}
+
+_ENGINE_LABELS = (("tesseract", "Tesseract OCR"), ("florence", "Florence-2 VLM"))
+
+
+def _pdf(text: object) -> str:
+    """Sanitize for WinAnsi (Helvetica): ₹/≥/≤ have no glyph and print as boxes."""
+    out = str(text or "").strip()
+    return out.replace("₹", "Rs. ").replace("≥", ">=").replace("≤", "<=").replace("×", "x")
+
+
+def _short_rule(rule_id: str, expected: str | None) -> tuple[str, str]:
+    if rule_id in _RULE_LABELS:
+        return _RULE_LABELS[rule_id]
+    if rule_id == "LMPC-7.2-numeral":
+        return "7.2", _rule7_requirement("Numeral height", expected)
+    if rule_id == "LMPC-7.3-letter":
+        return "7.3", _rule7_requirement("Letter height", expected)
+    if rule_id.startswith("LMPC-gtin"):
+        return rule_id, "Barcode identity cross-check"
+    return rule_id, rule_id
+
+
+def _rule7_requirement(base: str, expected: str | None) -> str:
+    exp = expected or ""
+    table = ""
+    if "Table-II" in exp:
+        table = "Table-II"
+    elif "Table-I" in exp:
+        table = "Table-I"
+    qty = ""
+    m = re.search(r"net ([\d.]+)g/ml", exp)
+    if m:
+        qty = f"{m.group(1)}g"
+    else:
+        m = re.search(r"panel ([\d.]+)cm", exp)
+        if m:
+            qty = f"{m.group(1)}cm² panel"
+    tag = ""
+    low = exp.lower()
+    if "embossed" in low:
+        tag = "embossed"
+    elif "ordinary print" in low:
+        tag = "ordinary print"
+    bits = ", ".join(b for b in (table, qty, tag) if b)
+    return f"{base} ({bits})" if bits else base
+
+
+def _display_observed(value: object) -> str:
+    s = _pdf(value)
+    if not s or s.lower() == "absent":
+        return "Not detected on scanned panel"
+    if s.lower() == "unmeasured":
+        return "Not measured"
+    return s
+
+
+def _engine_label(engine: object, confidence: object) -> str:
+    name = _pdf(engine) or "OCR"
+    for key, label in _ENGINE_LABELS:
+        if key in name.lower():
+            name = label
+            break
+    try:
+        conf = float(str(confidence or 0))
+    except (TypeError, ValueError):
+        conf = 0.0
+    return f"{name} — {conf:g}%"
+
+
+def _status_color(status: str):
+    from reportlab.lib import colors as _colors
+
+    if status == "PASS":
+        return _colors.HexColor("#0E6B2E")
+    if status == "NOT_ASSESSABLE":
+        return _colors.HexColor("#8A6D00")
+    return _colors.HexColor("#C0392B")
+
+
+def _header(canvas, doc) -> None:
+    canvas.saveState()
+    try:
+        from reportlab.lib.pagesizes import A4 as _A4
+
+        W, H = _A4
+        canvas.setFont("Helvetica-Bold", 13)
+        canvas.drawString(18 * mm, H - 14 * mm, "DRISHTILM")
+        canvas.setFont("Helvetica", 9)
+        canvas.drawRightString(W - 18 * mm, H - 14 * mm, f"Page {doc.page}")
+        canvas.setFont("Helvetica-Bold", 11)
+        canvas.drawCentredString(
+            W / 2, H - 22 * mm, "Legal Metrology (Packaged Commodities) Compliance Report"
+        )
+        canvas.setFont("Helvetica", 9)
+        canvas.drawCentredString(
+            W / 2, H - 30 * mm, f"SCAN ID: {doc.scan_id}    REQUEST ID: {doc.request_id}"
+        )
+        canvas.setFont("Helvetica-Oblique", 7.5)
+        canvas.drawCentredString(
+            W / 2,
+            H - 34 * mm,
+            "Suggested findings only — the reviewing officer decides under the "
+            "Legal Metrology Act, 2009 and Rules, 2011.",
+        )
+        canvas.setStrokeColor(_gray())
+        canvas.setLineWidth(0.5)
+        canvas.line(18 * mm, H - 36 * mm, W - 18 * mm, H - 36 * mm)
+    finally:
+        canvas.restoreState()
+
+
+def _gray():
+    from reportlab.lib import colors as _colors
+
+    return _colors.HexColor("#6B7280")
 
 
 def _annotated_capture(
@@ -49,33 +183,56 @@ def _annotated_capture(
         return None
 
 
-def _enforcement_summary(verdict: str, failed_ids: list[str]) -> list[str]:
-    """Suggested next steps. Advisory only — the officer decides, per the
-    applicable provisions of the Legal Metrology Act, 2009 and 2011 Rules."""
+def _nonpass_block(r: dict) -> list[str]:
+    """Why + numbered next steps for one failing/unmeasurable rule (plain text)."""
+    lines = []
+    if r.get("why"):
+        lines.append(_pdf(r["why"]))
+    steps = r.get("next_steps") or []
+    if steps:
+        numbered = "; ".join(f"({n}) {s}" for n, s in enumerate(steps, start=1))
+        lines.append(f"Recommended next steps: {numbered}")
+    elif r.get("remedy"):
+        lines.append(f"Recommended next steps: {_pdf(r['remedy'])}")
+    return lines
+
+
+def _enforcement_lines(verdict: str, results: list[dict]) -> list[str]:
+    """Advisory enforcement summary with per-failure guidance."""
+    bad = [r for r in results if str(r.get("status")) in ("FAIL", "NOT_FOUND")]
+    unmeasured = [r for r in results if str(r.get("status")) == "NOT_ASSESSABLE"]
+    lines: list[str] = []
     if verdict == "COMPLIANT":
         return [
             "No violation found. No enforcement action required.",
             "Retain this report for record and routine follow-up.",
         ]
     if verdict == "INCOMPLETE":
-        return [
-            (
-                "Evidence incomplete: rules marked NOT_ASSESSABLE could not run "
-                "(usually the millimetre scale was missing)."
-            ),
-            (
-                "Re-capture with a reference object (or supply PPM) and re-evaluate. "
-                "Do NOT treat this scan as compliant."
-            ),
-        ]
-    lines = [
-        f"Non-compliance recorded on {len(failed_ids)} rule(s): {', '.join(failed_ids)}.",
-        (
-            "Record findings with photo evidence; issue a show-cause notice to the "
-            "manufacturer/packer/importer under the applicable provisions, and "
-            "re-inspect within the statutory compliance period."
-        ),
-    ]
+        lines.append(
+            "Evidence incomplete: some declarations could not be verified "
+            "(weak read or millimetre scale missing) — this scan is NOT a clean chit."
+        )
+        lines.append(
+            "Re-capture (close-ups, reference object in frame) and re-evaluate. "
+            "Do NOT treat this scan as compliant."
+        )
+        for r in bad + unmeasured:
+            short, _req = _short_rule(str(r.get("rule_id", "?")), r.get("expected"))
+            lines.append(f"{short}:")
+            lines += _nonpass_block(r)
+        return lines
+    ids = ", ".join(_short_rule(str(r.get("rule_id", "?")), r.get("expected"))[0] for r in bad)
+    plural = "" if len(bad) == 1 else "s"
+    lines.append(f"Non-compliance recorded on {len(bad)} rule{plural}: {ids}.")
+    for r in bad:
+        short, _req = _short_rule(str(r.get("rule_id", "?")), r.get("expected"))
+        lines.append(f"{short}:")
+        lines += _nonpass_block(r)
+    lines.append(
+        "Record findings with photo evidence; issue a show-cause notice to the "
+        "manufacturer/packer/importer under the applicable provisions, and "
+        "re-inspect within the statutory compliance period."
+    )
     return lines
 
 
@@ -85,10 +242,8 @@ def build_report_pdf(
     warnings: list[str],
     frames: list[dict] | None = None,
 ) -> bytes:
-    """One annotated evidence photo per uploaded angle (label, blob, boxes...).
-
-    `frames` entries: {label, blob, boxes, cw, ch}. Falls back to the legacy
-    single capture when None (kept for backward compatibility).
+    """Sample-format compliance report: header, case box, verdict banner,
+    rule table, advisory summary with guidance, evidence, sign-off.
     """
     from xml.sax.saxutils import escape
 
@@ -106,12 +261,20 @@ def build_report_pdf(
     )
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm)
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=40 * mm, bottomMargin=16 * mm
+    )
+    doc.scan_id = str(getattr(scan, "id", "—"))
+    doc.request_id = str(getattr(scan, "request_id", "—"))
     styles = getSampleStyleSheet()
-    h3 = ParagraphStyle("h3", parent=styles["Heading3"], spaceBefore=6, spaceAfter=4)
+    h = ParagraphStyle("h", parent=styles["Heading3"], spaceBefore=8, spaceAfter=4)
     cell = ParagraphStyle("cell", parent=styles["Normal"], fontSize=8.5, leading=11)
     cell_small = ParagraphStyle("cellSmall", parent=cell, fontSize=8, leading=10)
-    cell_head = ParagraphStyle("cellHead", parent=cell, fontName="Helvetica-Bold")
+    cell_bold = ParagraphStyle("cellBold", parent=cell, fontName="Helvetica-Bold")
+    label = ParagraphStyle("label", parent=cell, fontName="Helvetica-Bold")
+    banner = ParagraphStyle(
+        "banner", parent=styles["Normal"], fontSize=11, leading=14, fontName="Helvetica-Bold"
+    )
 
     def _ts(value) -> str:
         try:
@@ -120,35 +283,51 @@ def build_report_pdf(
             return str(value or "—")
 
     def _txt(value) -> str:
-        text = str(value or "").strip()
+        text = _pdf(value)
         return text if text else "—"
 
-    story = [
-        Paragraph("LMPC Compliance Report", styles["Title"]),
-        Spacer(1, 6 * mm),
-        Paragraph(f"Scan ID: {scan.id} &nbsp;&nbsp; Request: {scan.request_id}", styles["Normal"]),
-        Paragraph(
-            f"Product: {escape(_txt(scan.product_name))} &nbsp;&nbsp; "
-            f"Brand: {escape(_txt(scan.brand_name))} &nbsp;&nbsp; "
-            f"Category: {escape(_txt(scan.category))}",
-            styles["Normal"],
+    verdict = str(getattr(scan, "verdict", "INCOMPLETE"))
+    flagged = sum(1 for r in results if str(r.get("status")) in ("FAIL", "NOT_FOUND"))
+    passed = sum(1 for r in results if str(r.get("status")) == "PASS")
+    total = len(results)
+
+    story = [Paragraph("CASE DETAILS", h)]
+    net_obs = "—"
+    for r in results:
+        if str(r.get("rule_id")) == "LMPC-6.1-netqty":
+            obs = _display_observed(r.get("observed"))
+            net_obs = obs if not obs.startswith("Not ") else "—"
+    reviewed_by = getattr(scan, "reviewed_by", None)
+    case_rows = [
+        ("PRODUCT", _txt(getattr(scan, "product_name", None))),
+        ("BRAND / MANUFACTURER", _txt(getattr(scan, "brand_name", None))),
+        ("CATEGORY", _txt(getattr(scan, "category", None))),
+        ("DECLARED NET QUANTITY", net_obs),
+        ("SCANNED AT", _ts(getattr(scan, "created_at", None))),
+        (
+            "REVIEWED AT",
+            _ts(getattr(scan, "reviewed_at", None)) if getattr(scan, "reviewed_at", None) else "—",
         ),
-        Paragraph(
-            f"Engine: {scan.ocr_engine} (confidence {scan.ocr_confidence}%) &nbsp;&nbsp; "
-            f"Verdict: {scan.verdict} &nbsp;&nbsp; Review: {scan.status}"
-            + (f" by {scan.reviewed_by}" if scan.reviewed_by else ""),
-            styles["Normal"],
-        ),
-        Paragraph(
-            f"Scanned at: {_ts(getattr(scan, 'created_at', None))}"
-            + (
-                f" &nbsp;&nbsp; Reviewed: {_ts(scan.reviewed_at)} by {scan.reviewed_by}"
-                if getattr(scan, "reviewed_at", None)
-                else " &nbsp;&nbsp; Reviewed: pending"
-            ),
-            styles["Normal"],
+        ("REVIEWED BY", _txt(reviewed_by)),
+        (
+            "OCR ENGINE / CONFIDENCE",
+            _engine_label(getattr(scan, "ocr_engine", ""), getattr(scan, "ocr_confidence", 0)),
         ),
     ]
+    case_table = Table(
+        [[Paragraph(escape(k), label), Paragraph(escape(v), cell)] for k, v in case_rows],
+        colWidths=[52 * mm, 120 * mm],
+    )
+    case_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, (0, 0, 0)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (0, 0), (0, -1), (0.93, 0.93, 0.93)),
+            ]
+        )
+    )
+    story += [case_table]
     lat, lon = getattr(scan, "scan_lat", None), getattr(scan, "scan_lon", None)
     if lat is not None and lon is not None:
         story.append(
@@ -157,7 +336,7 @@ def build_report_pdf(
     else:
         story.append(
             Paragraph(
-                "Inspection location: not provided (GPS unavailable or desktop upload)", styles["Normal"]
+                "Inspection location: Not provided (GPS unavailable / desktop upload)", styles["Normal"]
             )
         )
     if getattr(scan, "corrected_by", None):
@@ -168,51 +347,80 @@ def build_report_pdf(
                 styles["Normal"],
             )
         )
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 3 * mm))
 
-    story.append(Paragraph("Findings — with captured values", h3))
-    rows = [[Paragraph("Rule", cell_head), Paragraph("Status", cell_head), Paragraph("Detail", cell_head)]]
-    failed_ids: list[str] = []
-    for r in results:
-        status = str(r.get("status", "PASS"))
-        if status in ("FAIL", "NOT_FOUND"):
-            failed_ids.append(str(r.get("rule_id", "?")))
-        # The exact captured value travels with every finding: a legal audit
-        # must show what the OCR saw, not just "present".
-        detail = r.get("message", "")
-        if r.get("observed"):
-            detail += f" Observed: {r['observed']}."
-        if r.get("expected"):
-            detail += f" Expected: {r['expected']}."
-        if r.get("remedy"):
-            detail += f" Remedy: {r['remedy']}"
-        rows.append(
-            [
-                Paragraph(escape(str(r.get("rule_id", ""))), cell_small),
-                Paragraph(escape(status), cell),
-                Paragraph(escape(detail), cell),
-            ]
-        )
-    table = Table(rows, colWidths=[38 * mm, 30 * mm, 106 * mm], repeatRows=1)
-    table.setStyle(
+    review_note_raw = f"Final review by {reviewed_by}" if reviewed_by else "Pending review"
+    plural = "" if flagged == 1 else "s"
+    banner_text = (
+        f"VERDICT: {verdict}&nbsp;&nbsp;{flagged} rule{plural} flagged · "
+        f"{passed} of {total} checks passed · {escape(review_note_raw)}"
+    )
+    banner_bg = {"COMPLIANT": (0.90, 0.95, 0.90), "NON_COMPLIANT": (0.96, 0.90, 0.90)}.get(
+        verdict, (0.97, 0.94, 0.85)
+    )
+    banner_table = Table([[Paragraph(banner_text, banner)]], colWidths=[172 * mm])
+    banner_table.setStyle(
         TableStyle(
             [
                 ("GRID", (0, 0), (-1, -1), 0.5, (0, 0, 0)),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("BACKGROUND", (0, 0), (-1, 0), (0.93, 0.93, 0.93)),
+                ("BACKGROUND", (0, 0), (-1, -1), banner_bg),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]
         )
     )
-    story += [table, Spacer(1, 4 * mm)]
-    for w in warnings:
-        story.append(Paragraph(f"Warning: {escape(w)}", styles["Normal"]))
+    story += [banner_table, Spacer(1, 2 * mm)]
 
-    story.append(Paragraph("Visual evidence", h3))
+    story.append(Paragraph("RULE-WISE FINDINGS", h))
+    rows = [
+        [
+            Paragraph("Rule", cell_bold),
+            Paragraph("Requirement", cell_bold),
+            Paragraph("Status", cell_bold),
+            Paragraph("Observed", cell_bold),
+            Paragraph("Expected", cell_bold),
+        ]
+    ]
+    row_colors = []
+    for r in results:
+        short, req = _short_rule(str(r.get("rule_id", "")), r.get("expected"))
+        status = str(r.get("status", "PASS"))
+        rows.append(
+            [
+                Paragraph(escape(_pdf(short)), cell_small),
+                Paragraph(escape(_pdf(req)), cell),
+                Paragraph(f'<font color="{_status_color(status).hexval()}">{escape(status)}</font>', cell),
+                Paragraph(escape(_display_observed(r.get("observed"))), cell),
+                Paragraph(escape(_pdf(r.get("expected")) or "—"), cell),
+            ]
+        )
+        row_colors.append(_status_color(status))
+    table = Table(rows, colWidths=[24 * mm, 42 * mm, 28 * mm, 39 * mm, 39 * mm], repeatRows=1)
+    style_cmds = [
+        ("GRID", (0, 0), (-1, -1), 0.5, (0, 0, 0)),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (-1, 0), (0.93, 0.93, 0.93)),
+    ]
+    table.setStyle(TableStyle(style_cmds))
+    story += [table, Spacer(1, 2 * mm)]
+    for w in warnings:
+        story.append(Paragraph(f"Warning: {escape(_pdf(w))}", styles["Normal"]))
+
+    evidence_story: list = [Paragraph("VISUAL EVIDENCE", h)]
     evidence = (
         frames
         if frames is not None
         else (
-            [{"label": "Capture", "blob": scan.image_blob, "boxes": [], "cw": None, "ch": None}]
+            [
+                {
+                    "label": "Angle 1 (Best capture)",
+                    "blob": scan.image_blob,
+                    "boxes": [],
+                    "cw": None,
+                    "ch": None,
+                }
+            ]
             if scan.image_blob
             else []
         )
@@ -237,28 +445,29 @@ def build_report_pdf(
             if height > 195 * mm:
                 height = 195 * mm
                 width = height * iw / ih if ih else width
-            story.append(
+            evidence_story.append(
                 KeepTogether(
                     [
-                        Paragraph(escape(str(frame.get("label", "Capture"))), styles["Normal"]),
+                        Paragraph(escape(_pdf(frame.get("label", "Capture"))), styles["Normal"]),
                         RLImage(io.BytesIO(annotated), width=width, height=height),
                     ]
                 )
             )
             shown += 1
         if shown:
-            story.append(
+            evidence_story.append(
                 Paragraph(
-                    "Stored capture(s) with OCR word boxes (green: confidence ≥60%, "
-                    "red: verify against the physical package).",
+                    "OCR word boxes overlaid — green: confidence >= 60%, "
+                    "red: verify against the physical package. Stored with scan "
+                    "record for audit trail.",
                     styles["Normal"],
                 )
             )
     if not shown:
-        story.append(Paragraph("No stored capture for this scan.", styles["Normal"]))
+        evidence_story.append(Paragraph("No stored capture for this scan.", styles["Normal"]))
 
-    story.append(Paragraph("Enforcement summary (advisory)", h3))
-    for line in _enforcement_summary(str(scan.verdict), failed_ids):
+    story.append(Paragraph("ENFORCEMENT SUMMARY (ADVISORY)", h))
+    for line in _enforcement_lines(verdict, results):
         story.append(Paragraph(escape(line), styles["Normal"]))
     story.append(
         Paragraph(
@@ -268,5 +477,60 @@ def build_report_pdf(
             styles["Normal"],
         )
     )
-    doc.build(story)
+    story += evidence_story
+
+    story.append(Paragraph("OFFICER REVIEW & SIGN-OFF", h))
+    try:
+        import json as _json
+
+        overridden = bool(getattr(scan, "overrides_json", None) and _json.loads(scan.overrides_json or "[]"))
+    except Exception:
+        overridden = False
+    if getattr(scan, "status", "") == "final":
+        review_status = "FINAL — Overridden with note" if overridden else "FINAL — Confirmed"
+    else:
+        review_status = "PENDING REVIEW"
+    sign_rows = [
+        ("Reviewing Officer", _txt(reviewed_by), "Review Status", review_status),
+        (
+            "Review Timestamp",
+            _ts(getattr(scan, "reviewed_at", None)) if getattr(scan, "reviewed_at", None) else "—",
+            "Report Generated",
+            datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
+        ),
+    ]
+    sign_table = Table(
+        [
+            [
+                Paragraph(escape(a), label),
+                Paragraph(escape(b), cell),
+                Paragraph(escape(c), label),
+                Paragraph(escape(d), cell),
+            ]
+            for a, b, c, d in sign_rows
+        ],
+        colWidths=[36 * mm, 50 * mm, 36 * mm, 50 * mm],
+    )
+    sign_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, (0, 0, 0)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (0, 0), (0, -1), (0.93, 0.93, 0.93)),
+                ("BACKGROUND", (2, 0), (2, -1), (0.93, 0.93, 0.93)),
+            ]
+        )
+    )
+    story += [
+        sign_table,
+        Spacer(1, 2 * mm),
+        Paragraph(
+            "This report is system-generated by DrishtiLM following officer confirmation "
+            "and is intended as field-inspection evidence. A digital signature and per-request "
+            "audit ID accompany the original record.",
+            styles["Normal"],
+        ),
+        Paragraph(f"Document integrity ID: SCAN-{doc.scan_id} / REQ-{doc.request_id}", styles["Normal"]),
+    ]
+    doc.build(story, onFirstPage=_header, onLaterPages=_header)
     return buf.getvalue()

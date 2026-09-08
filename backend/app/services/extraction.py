@@ -28,18 +28,60 @@ EXP_RE = re.compile(
     re.IGNORECASE,
 )
 # Fallback: bare dates with no keyword anchor (common when OCR drops the label word).
-# MM/YYYY bare form is constrained to 19xx/20xx so prices/counts never match.
+# 4-digit years only: nutrition tables ("8/9/10.11") constantly yield fake short
+# dates, and anchored patterns already cover MM/YY forms. The \d{4}/\d{4} glued
+# form stays ("2309/2025" = "23/09/2025" with one slash dropped by OCR — the
+# glued-date repair in _parse_date recovers it); its 19xx/20xx second half
+# keeps dotted nutrition runs out. Never matches prices.
 BARE_DATE_RE = re.compile(
-    r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|\d{1,2}[/\-](?:19|20)\d{2})\b"
+    r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.](?:19|20)\d{2}|\d{1,2}[/\-](?:19|20)\d{2}" r"|\d{4}[/\-](?:19|20)\d{2})\b"
 )
 CARE_RE = re.compile(
-    r"(?:(?:customer|consumer)\s*[a-z]?are\b|helpline|toll\s*free)[\s\S]{0,300}?([\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
+    r"(?:(?:customer|consumer)\s*(?:care|service|support|[a-z]?are\b)|helpline|toll\s*free)[\s\S]{0,300}?([\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
     re.IGNORECASE,
 )
-ORIGIN_RE = re.compile(
-    r"(?:country\s*o[ft]\s*(?:origin|ongin)|made\s*in)\s*[:\-]?\s*([A-Za-z ]{2,30})", re.IGNORECASE
+# Bare-contact fallback: a toll-free number or email is unambiguous — neither
+# ever prints spuriously — so accept it even when its heading was mangled
+# ("CUSTOMER SERVICE" OCR'd badly, anchor dropped). Tried only after CARE_RE.
+_BARE_CONTACT_RE = re.compile(
+    r"[\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|1800[\s\-]*\d[\d\s\-]{4,}", re.IGNORECASE
 )
-ADDRESS_HINT_RE = re.compile(r"\b(?:plot|street|road|sector|nagar|mumbai|delhi|india|\d{6})\b", re.IGNORECASE)
+ORIGIN_RE = re.compile(
+    r"(?:country\s*o[ft]\s*(?:origin|ongin)|made\s*in)\s*[:\-]?\s*([A-Za-z ]{2,30})",
+    re.IGNORECASE,
+)
+# Maker-block anchor ("MANUFACTURED BY: Acme" / "Mfd by ..." / "Regd Office").
+# Phase C: anchor-led capture beats keyword skating for multi-line addresses.
+_MFR_ANCHOR_RE = re.compile(
+    r"\b(manufactured|manufacture|mfd|mktd|marketed|packed)\s*by\b|\bregd\.?\s*office\b",
+    re.IGNORECASE,
+)
+# A bare 6-digit run is usually a barcode, not a pin code: only trust it next
+# to a real address word.
+_ADDRESS_WORD_RE = re.compile(
+    r"\b(plot|street|road|sector|nagar|enclave|colony|vihar|town|city|village|district"
+    r"|works|factory|office|park|estate|area|mumbai|delhi|india)\b",
+    re.IGNORECASE,
+)
+_PIN_RE = re.compile(r"\b\d{6}\b")
+# Storage/safety instructions are never the product name ("STORE IN A COOL...").
+_GENERIC_SKIP_RE = re.compile(
+    r"\b(store|storage|dispose|litter|recycle|recycling|keep|dry place|do not|conserver)\b",
+    re.IGNORECASE,
+)
+# Nutrition context: values here are serving facts, never the net quantity or
+# pack dates ("6.6g sugar", "Valeurs nutritionnelles pour 100g", "72 mg/serve").
+# Roots, not whole words: OCR mangles endings ("nutricondles", "energiçones").
+_NUTRITION_RE = re.compile(
+    r"sugar|sucr[ao]|protein|proté|prodies|energy|énerg|nutri|valeur|velour|voleur"
+    r"|kcal|kaul|lipide|carbo|calciu|colium|per\s*100|pour\s*100|/\s*serve"
+    r"|per\s*serve|\bservings?\b|contains|ingredients?|ingrédients?",
+    re.IGNORECASE,
+)
+# Bare rupee amounts ("₹ 120") without an MRP keyword. A lone ₹ glyph is often
+# OCR noise (Arabic-script logos misread), so a price cue must sit nearby.
+_MRP_RUPEE_RE = re.compile(r"₹\s*([\d,]+(?:\.\d{1,2})?)")
+_MRP_RUPEE_CUE_RE = re.compile(r"mrp|price|\brs\b|inclusive", re.IGNORECASE)
 
 DATE_FMTS = (
     "%d/%m/%Y",
@@ -116,6 +158,9 @@ def _fix_qty_units(text: str) -> str:
             if _NETQTY_LINE_RE.search(ln):
                 ln = re.sub(r"(?<=\d)\s*9\b", " g", ln)
                 ln = re.sub(r"(?<=\d)\s*q\b", " g", ln, flags=re.IGNORECASE)
+            # Digit-glued unit typos ("250 mie", "500 mle") occur on any line;
+            # the digit adjacency makes the repair safe outside net lines too.
+            ln = re.sub(r"(?<=\d)\s*(mie|mle|rnI)\b", " ml", ln)
             out.append(ln)
         return "\n".join(out)
     except Exception:
@@ -150,7 +195,10 @@ def _fix_date_tokens(text: str) -> str:
     try:
 
         def _rep(m: re.Match) -> str:
-            parts = [m.group(1).translate(_DIGIT_FIX_TABLE), m.group(2).translate(_DIGIT_FIX_TABLE)]
+            parts = [
+                m.group(1).translate(_DIGIT_FIX_TABLE),
+                m.group(2).translate(_DIGIT_FIX_TABLE),
+            ]
             year = m.group(3).translate(_DIGIT_FIX_TABLE)
             if not all(p and all(c.isdigit() for c in p) for p in (*parts, year)):
                 return m.group(0)
@@ -199,6 +247,100 @@ def _norm_num(s: str) -> float | None:
         return None
 
 
+def _qty_num(raw: str) -> float | None:
+    """Parse a quantity number, repairing barcode-glue ("0022250 ml" -> 250).
+
+    Tesseract glues barcode digits onto the true value ("890720 00222" +
+    "50 ml"). Genuine prints never carry leading zeros, so strip them; if the
+    run is still implausibly long, the true value trails the glued digits.
+    """
+    s = raw.replace(",", "").replace(" ", "")
+    m = re.fullmatch(r"0+(\d+(?:\.\d+)?)", s)
+    if m:
+        s = m.group(1)
+        head, dot, tail = s.partition(".")
+        if len(head) > 4:
+            head = head[-3:]
+        s = head + (dot + tail if dot else "")
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
+def _extract_qty(text: str) -> tuple[float | None, str | None]:
+    """Ranked net-quantity candidates. Anchored > e-marked > plain; nutrition
+    windows ("6.6g sugar", "per 100g") never count. First-seen wins ties.
+
+    Candidates are scoped to an 80/40-char window around the match: glued OCR
+    (missing line breaks) would otherwise let one nutrition word poison a
+    genuine "250 ml" sitting far away on the same mega-line.
+    """
+    cands: list[tuple[int, int, float, str]] = []  # (score, order, value, unit)
+    order = 0
+    for m in NET_QTY_RE.finditer(text):
+        v = _qty_num(m.group(1))
+        if v:
+            cands.append((3, order, v, m.group(2).lower().rstrip("s")))
+            order += 1
+    for m in NET_QTY_FALLBACK_RE.finditer(text):
+        win = text[max(0, m.start() - 80) : m.end() + 40]
+        if _NUTRITION_RE.search(win):
+            continue
+        v = _qty_num(m.group(1))
+        if v:
+            score = 2 if re.search(r"\be\b", win) else 0
+            cands.append((score, order, v, m.group(2).lower().rstrip("s")))
+            order += 1
+    if not cands:
+        return None, None
+    cands.sort(key=lambda t: (-t[0], t[1]))
+    return cands[0][2], cands[0][3]
+
+
+def _looks_like_measurement(ln: str) -> bool:
+    """Line is basically just a measurement ("250 ml e", "Bo 2 250 ml"): strip
+    unit words, digits and punctuation — ≤3 letters left means no product name.
+    Keeps real names ("Atta", "Wheat Biscuits") untouched."""
+    s = re.sub(
+        r"\b(kg|g|mg|ml|l|litre?s?|cm|m|nos?|pcs?|pc|units?|e)\b",
+        "",
+        ln,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(r"[\d.,/\-+×%()®™©°\s]", "", s)
+    return sum(c.isalpha() for c in s) <= 2
+
+
+def _extract_manufacturer(lines: list[str]) -> tuple[str | None, str | None]:
+    """Anchor-led maker block, else address-word lines (pin needs a companion
+    word — bare 6-digit runs are barcodes)."""
+    stop = re.compile(
+        r"customer|consumer|care|helpline|net\s*q|mrp|mfg|exp|batch|fssai|lic\.?\s*no",
+        re.IGNORECASE,
+    )
+    for i, ln in enumerate(lines):
+        m = _MFR_ANCHOR_RE.search(ln)
+        if not m:
+            continue
+        tail = ln[m.end() :].strip(" :-\t")
+        block = ([tail] if tail else []) + [x.strip() for x in lines[i + 1 : i + 4] if x.strip()]
+        kept: list[str] = []
+        for b in block:
+            if kept and stop.search(b):
+                break
+            kept.append(b)
+        if kept and kept[0]:
+            name = kept[0][:160]
+            addr = "; ".join(kept[1:3])[:300] or None
+            return name, addr
+    addr_lines = [ln for ln in lines if _ADDRESS_WORD_RE.search(ln)]
+    mfr_name = addr_lines[0][:160] if addr_lines else None
+    mfr_addr = "; ".join(addr_lines[:2])[:300] if addr_lines else None
+    return mfr_name, mfr_addr
+
+
 _NER_NLP = None
 _NER_TRIED = False
 
@@ -243,12 +385,19 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
 
         patch: dict = {}
         if decl.mrp is None and "MRP" in vals:
-            m = re.search(r"[\d,]+(?:\.\d{1,2})?", vals["MRP"])
+            # The NER model fires on bare small numbers ("5 PP" recycling mark):
+            # require a price cue inside the entity itself.
+            ent = vals["MRP"]
+            m = re.search(r"[\d,]+(?:\.\d{1,2})?", ent)
             v = _norm_num(m.group(0)) if m else None
-            if v:
+            if v and re.search(r"(rs|inr|₹|mrp|price)", ent, re.IGNORECASE):
                 patch["mrp"] = v
         if (decl.net_quantity_value is None or not decl.net_quantity_unit) and "NET_QTY" in vals:
-            m = re.search(r"([\d.,]+)\s*(kg|g|mg|ml|l|cm|pcs?|nos?|units?)\b", vals["NET_QTY"], re.IGNORECASE)
+            m = re.search(
+                r"([\d.,]+)\s*(kg|g|mg|ml|l|cm|pcs?|nos?|units?)\b",
+                vals["NET_QTY"],
+                re.IGNORECASE,
+            )
             if m:
                 v = _norm_num(m.group(1))
                 if v:
@@ -271,7 +420,15 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
             if d:
                 patch["expiry_date"] = d
         if decl.manufacturer_name is None and "MANUFACTURER" in vals:
-            patch["manufacturer_name"] = vals["MANUFACTURER"][:160]
+            # The NER model fires on any capitalized run ("A COOL, MICRENIC AND"):
+            # require an address word and sane digit load — trained maker spans
+            # are full address lines, so this keeps recall while killing
+            # furniture and barcode-digit entities.
+            ent = vals["MANUFACTURER"]
+            digits = sum(c.isdigit() for c in ent)
+            alpha = sum(c.isalpha() for c in ent)
+            if _ADDRESS_WORD_RE.search(ent) and digits <= alpha:
+                patch["manufacturer_name"] = ent[:160]
         # The rule needs a *contact*, not just the words "customer care":
         # accept the NER span only if it carries email/phone/toll-free
         # evidence, else a heading alone would fake a PASS.
@@ -294,11 +451,15 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
     text = normalize_ocr_text(ocr_text or "")
     m = MRP_RE.search(text)
     mrp_val = _norm_num(m.group(1)) if m else None
+    if mrp_val is None:
+        for mr in _MRP_RUPEE_RE.finditer(text):
+            win = text[max(0, mr.start() - 40) : mr.end() + 10]
+            if _MRP_RUPEE_CUE_RE.search(win):
+                mrp_val = _norm_num(mr.group(1))
+                break
     incl_taxes = bool(INCL_TAXES_RE.search(text))
 
-    m = NET_QTY_RE.search(text) or NET_QTY_FALLBACK_RE.search(text)
-    qty_val = _norm_num(m.group(1)) if m else None
-    qty_unit = m.group(2).lower().rstrip("s") if m and len(m.groups()) >= 2 else None
+    qty_val, qty_unit = _extract_qty(text)
     if qty_unit == "litre":
         qty_unit = "l"
 
@@ -311,9 +472,13 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
         exp = _parse_date(exp_raw)  # relative durations ("12 months") -> left None (needs mfg anchor)
     if mfg is None or exp is None:
         # Keyword anchor OCR-mangled (e.g. "Mtg"/"Expr") or dropped: fall back to
-        # bare dates in reading order — first = mfg, second = expiry.
-        bare = [_parse_date(b) for b in BARE_DATE_RE.findall(text)]
-        bare = [b for b in bare if b is not None]
+        # bare 4-digit-year dates in reading order — first = mfg, second = expiry.
+        # Nutrition lines are skipped (their dotted tables fake short dates).
+        bare: list[date] = []
+        for ln in text.splitlines():
+            if _NUTRITION_RE.search(ln):
+                continue
+            bare.extend(b for b in (_parse_date(x) for x in BARE_DATE_RE.findall(ln)) if b)
         if mfg is None and bare:
             mfg = bare[0]
         if exp is None and len(bare) >= 2:
@@ -327,7 +492,14 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             if not any(
                 difflib.get_close_matches(
                     w.title(),
-                    ["Manufacture", "Manufactured", "Manufacturing", "Packing", "Packed", "Mfg"],
+                    [
+                        "Manufacture",
+                        "Manufactured",
+                        "Manufacturing",
+                        "Packing",
+                        "Packed",
+                        "Mfg",
+                    ],
                     n=1,
                     cutoff=0.85,
                 )
@@ -343,6 +515,9 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
 
     m = CARE_RE.search(text)
     care = m.group(0).strip()[:300] if m else None
+    if care is None:
+        bm = _BARE_CONTACT_RE.search(text)
+        care = bm.group(0).strip()[:300] if bm else None
 
     m = ORIGIN_RE.search(text)
     origin = m.group(1).strip() if m else None
@@ -366,12 +541,19 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
         )
 
     generic = next(
-        (ln[:120] for ln in lines if sum(c.isalpha() for c in ln) >= 3 and not _is_declaration_line(ln)),
+        (
+            ln[:120]
+            for ln in lines
+            if sum(c.isalpha() for c in ln) >= 3
+            and len(ln) <= 160  # glued OCR mega-lines are never a product name
+            and any(len(t) >= 3 for t in re.findall(r"[A-Za-z]+", ln))  # real word, not shards
+            and not _is_declaration_line(ln)
+            and not _GENERIC_SKIP_RE.search(ln)
+            and not _looks_like_measurement(ln)
+        ),
         None,
     )
-    addr_lines = [ln for ln in lines if ADDRESS_HINT_RE.search(ln)]
-    mfr_name = addr_lines[0][:160] if addr_lines else None
-    mfr_addr = "; ".join(addr_lines[:2])[:300] if addr_lines else None
+    mfr_name, mfr_addr = _extract_manufacturer(lines)
 
     # Optional spaCy NER refinement (CPU): fills fields the regex missed using
     # models/lmpc_ner trained by ml/train_ner.py. Never overrides a regex hit
