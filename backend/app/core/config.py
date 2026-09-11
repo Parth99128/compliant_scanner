@@ -1,6 +1,13 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+INSECURE_DEFAULTS = {
+    "change-me-in-env",
+    "change-me-to-a-long-random-value",
+    "replace-me-generate-with-secrets-token-hex-32",
+}
 
 
 class Settings(BaseSettings):
@@ -51,6 +58,12 @@ class Settings(BaseSettings):
     @property
     def allowed_content_type_list(self) -> list[str]:
         return [c.strip() for c in self.allowed_content_types.split(",") if c.strip()]
+
+    @model_validator(mode="after")
+    def _refuse_default_secret_in_production(self) -> "Settings":
+        if self.environment.lower() == "production" and self.jwt_secret in INSECURE_DEFAULTS:
+            raise ValueError("JWT_SECRET must be set to a strong random value in production")
+        return self
 
 
 @lru_cache
