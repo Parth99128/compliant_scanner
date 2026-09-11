@@ -13,7 +13,7 @@ import io
 import re
 from datetime import UTC, datetime
 
-from reportlab.lib.units import mm
+from reportlab.lib.units import mm  # type: ignore[import-untyped]
 
 # Short refs + requirement text for the findings table. Rule 7 numeral/letter
 # rows are dynamic (tier basis comes from the expected string).
@@ -97,7 +97,7 @@ def _engine_label(engine: object, confidence: object) -> str:
 
 
 def _status_color(status: str):
-    from reportlab.lib import colors as _colors
+    from reportlab.lib import colors as _colors  # type: ignore[import-untyped]
 
     if status == "PASS":
         return _colors.HexColor("#0E6B2E")
@@ -109,7 +109,7 @@ def _status_color(status: str):
 def _header(canvas, doc) -> None:
     canvas.saveState()
     try:
-        from reportlab.lib.pagesizes import A4 as _A4
+        from reportlab.lib.pagesizes import A4 as _A4  # type: ignore[import-untyped]
 
         W, H = _A4
         canvas.setFont("Helvetica-Bold", 13)
@@ -139,7 +139,7 @@ def _header(canvas, doc) -> None:
 
 
 def _gray():
-    from reportlab.lib import colors as _colors
+    from reportlab.lib import colors as _colors  # type: ignore[import-untyped]
 
     return _colors.HexColor("#6B7280")
 
