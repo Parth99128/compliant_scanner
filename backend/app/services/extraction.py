@@ -6,26 +6,27 @@ import difflib
 import re
 from datetime import date, datetime
 
+from app.services.layout import build_lines, find_anchor, rows_below
 from app.services.rule_engine import ProductDeclaration
 
 MRP_RE = re.compile(
-    r"(?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
-    r"[\s()\-–—]{0,8}(?:Rs\.?|INR|₹|%)?[\s()\-–—]{0,8}:?\s*(?:Rs\.?|INR|₹|%)?\s*"
-    r"([\d,]+(?:\.\d{1,2})?)",
+    r"(?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price|max[a-z]{2,5}\s+retail\s+price)"
+    r"[\s()\-–—|]{0,8}(?:Rs\.?|INR|₹|%)?[\s()\-–—|]{0,8}:?\s*(?:Rs\.?|INR|₹|%)?\s*"
+    r"([\d, ]+(?:\.\d{1,2})?)(?![\dA-Za-z])",
     re.IGNORECASE,
 )
 INCL_TAXES_RE = re.compile(r"incl.*?o[ft]\W*all\W*tax", re.IGNORECASE)
 NET_QTY_RE = re.compile(
-    r"net\s*(?:q?t[yl]|quantity|wt|weight|vol|content|o?t?y)[^\d]*([\d.,]+)\s*(kg|g|mg|ml|l|litre?s?|cm|m|nos?|pcs?|pc|units?)\b",
+    r"(?:net|det|nct)\s*(?:q?t[yl]|quantity|wt|weight|vol|volume|content|o?t?y)[^\d]*([\d.,]+)\s*(kg|g|mg|ml|l|litre?s?|cm|m|nos?|pcs?|pc|units?)\b",
     re.IGNORECASE,
 )
 NET_QTY_FALLBACK_RE = re.compile(r"\b([\d.,]+)\s*(kg|g\b|mg|ml|l\b|litre?s?|units?)\b", re.IGNORECASE)
 MFG_RE = re.compile(
-    r"(?:mfg|meg|mtg|manufactur\w*|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
+    r"(?:mfg|meg|mtg|manufactur\w*|packed|mfd|pkd|m[fd]d?)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{1,2}[/\-.][A-Za-z]{3,9}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4})",
     re.IGNORECASE,
 )
 EXP_RE = re.compile(
-    r"(?:exp|exf|expr|expiry|best\s*before|use\s*by)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d+\s*(?:months?|days?|years?)|\d{1,2}[/\-]\d{2,4})",
+    r"(?:exp|exf|expr|expiry|best\s*before|use\s*by)[^\d]*?(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{1,2}[/\-.][A-Za-z]{3,9}[/\-.]\d{2,4}|\d{4}[/\-.]\d{4}|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d+\s*(?:months?|days?|years?)|\d{1,2}[/\-]\d{2,4})",
     re.IGNORECASE,
 )
 # Fallback: bare dates with no keyword anchor (common when OCR drops the label word).
@@ -38,14 +39,15 @@ BARE_DATE_RE = re.compile(
     r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.](?:19|20)\d{2}|\d{1,2}[/\-](?:19|20)\d{2}" r"|\d{4}[/\-](?:19|20)\d{2})\b"
 )
 CARE_RE = re.compile(
-    r"(?:(?:customer|consumer)\s*(?:care|service|support|[a-z]?are\b)|helpline|toll\s*free)[\s\S]{0,300}?([\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
+    r"(?:(?:customer|consumer)\s*(?:care|service|support|[a-z]?are\b)|helpline|toll\s*free)[\s\S]{0,300}?([\w+\-.]+ ?@{1,2} ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*)",
     re.IGNORECASE,
 )
 # Bare-contact fallback: a toll-free number or email is unambiguous — neither
 # ever prints spuriously — so accept it even when its heading was mangled
 # ("CUSTOMER SERVICE" OCR'd badly, anchor dropped). Tried only after CARE_RE.
+# "@@" tolerates the common double-print OCR glitch ("heip@@bortt.com").
 _BARE_CONTACT_RE = re.compile(
-    r"[\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|1800[\s\-]*\d[\d\s\-]{4,}", re.IGNORECASE
+    r"[\w+\-.]+ ?@{1,2} ?[a-z\d\-.]+ ?\.[a-z]{2,}|1800[\s\-]*\d[\d\s\-]{4,}", re.IGNORECASE
 )
 ORIGIN_RE = re.compile(
     r"(?:country\s*o[ft]\s*(?:origin|ongin)|made\s*in)\s*[:\-]?\s*([A-Za-z ]{2,30})",
@@ -54,21 +56,37 @@ ORIGIN_RE = re.compile(
 # Maker-block anchor ("MANUFACTURED BY: Acme" / "Mfd by ..." / "Regd Office").
 # Phase C: anchor-led capture beats keyword skating for multi-line addresses.
 _MFR_ANCHOR_RE = re.compile(
-    r"\b(manufactured|manufacture|mfd|mktd|marketed|packed)\s*by\b|\bregd\.?\s*office\b",
+    r"\b(manufactured|manufacture|mfd|mktd|marketed|packed)\s*by\b"
+    r"|\bmfd\.?\s*for\b"
+    r"|\bregd\.?\s*office\b|\bregistered\s*office\b",
     re.IGNORECASE,
 )
+_MFR_ADDR_START_RE = re.compile(r"^(plot|gat|sr\.?|s\.?|no\.?|address)\b", re.IGNORECASE)
 # A bare 6-digit run is usually a barcode, not a pin code: only trust it next
 # to a real address word.
 _ADDRESS_WORD_RE = re.compile(
     r"\b(plot|street|road|sector|nagar|enclave|colony|vihar|town|city|village|district"
-    r"|works|factory|office|park|estate|area|mumbai|delhi|india)\b",
+    r"|works|factory|office|park|estate|area|mumbai|delhi|india|chennai|kolkata|pune"
+    r"|bengaluru|bangalore|hyderabad|ahmedabad|jaipur|lucknow|kanpur|nagpur|indore"
+    r"|bhopal|patna|rohtak|gurugram|gurgaon|noida|kochi|coimbatore|agra|meerut|surat"
+    r"|rajkot|amritsar|ranchi|guwahati)\b",
     re.IGNORECASE,
 )
 _PIN_RE = re.compile(r"\b\d{6}\b")
-# Lot/batch/use-by lines are admin data, never the product name ("Lot No: F OH1").
+# Bare declaration headings carry no value ("NET QUANTITY", "MAXIMUM RETAIL
+# PRICE" alone on a line) — never the product name.
+_LONE_LABEL_RE = re.compile(
+    r"^(net\s*(qty|quantity|wt|weight|vol|volume)?|mrp|m\.?r\.?p\.?|maximum\s*retail\s*price"
+    r"|mfg|exp|expiry|batch(\s*no\.?)?|lot(\s*no\.?)?|use\s*by|best\s*before"
+    r"|month.*year|contents)\s*[:\-]?\s*$",
+    re.IGNORECASE,
+)
+# Brand-licence boilerplate is never the product name ("under brand licence
+# from Patanjali Ayurved Ltd").
 _GENERIC_SKIP_RE = re.compile(
     r"\b(store|storage|dispose|litter|recycle|recycling|keep|dry place|do not|conserver"
-    r"|lot|batch|use\s*by|best\s*before)\b",
+    r"|lot|batch|use\s*by|best\s*before|contents|ingredients|nutritional?"
+    r"|brand\s*licen[sc]e|under\s*brand)\b",
     re.IGNORECASE,
 )
 # Nutrition context: values here are serving facts, never the net quantity or
@@ -77,7 +95,9 @@ _GENERIC_SKIP_RE = re.compile(
 _NUTRITION_RE = re.compile(
     r"sugar|sucr[ao]|protein|proté|prodies|energy|énerg|nutri|valeur|velour|voleur"
     r"|kcal|kaul|lipide|carbo|calciu|colium|per\s*100|pour\s*100|/\s*serve"
-    r"|per\s*serve|\bservings?\b|contains|ingredients?|ingrédients?",
+    r"|per\s*serve|\bservings?\b|contains|ingredients?|ingrédients?"
+    r"|milk|water\b|oil|butter|tomato|onion|flour|\bsalt\b|honey|recipe|\bcook\b"
+    r"|\bserve\b|serving|\bcup\b|\btbsp\b|\btsp\b",
     re.IGNORECASE,
 )
 # Bare rupee amounts ("₹ 120") without an MRP keyword. A lone ₹ glyph is often
@@ -90,6 +110,11 @@ DATE_FMTS = (
     "%d-%m-%Y",
     "%d.%m.%Y",
     "%d/%m/%y",
+    "%d/%b/%Y",
+    "%d/%b/%y",
+    "%d-%b-%Y",
+    "%d-%b-%y",
+    "%d.%b.%Y",
     "%Y-%m-%d",
     "%b %Y",
     "%B %Y",
@@ -119,13 +144,17 @@ _MONTHS_FULL = (
 # Unit-sale-price and lot cues: a standalone amount line carrying these is
 # NEVER the MRP (multi-line MRP must skip it).
 _MRP_POISON_RE = re.compile(r"\b(usp|unit\s*(sale\s*)?price|per\s*g\b|lot|batch)\b", re.IGNORECASE)
-_MRP_LINE_AMT_RE = re.compile(r"^\s*(?:Rs\.?|INR|₹)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:/-\s*)?$")
+_MRP_LINE_AMT_RE = re.compile(r"^\s*(?:Rs\.?|INR|₹)?\s*([\d, ]+(?:\.\d{1,2})?)\s*(?:/-\s*)?$")
 _MRP_KEYWORD_RE = re.compile(r"MRP|M\.?R\.?P\.?|maximum\s*retail\s*price", re.IGNORECASE)
 
 
 def _multiline_mrp(lines: list[str]) -> float | None:
-    """MRP keyword on one line, amount alone on a following line ("MRP Rs." /
-    "Rs. 50.00"). Poisoned lines (USP, lot, batch) never count."""
+    """MRP keyword and amount on different lines, either order.
+
+    Forward: "MRP Rs." / "Rs. 50.00". Backward: "₹50.00:" ... "MRP Rs."
+    (Suhana-style). Poisoned lines (USP, lot, batch) never count: for the
+    backward search only the text before the first poison cue is used.
+    """
     for i, ln in enumerate(lines):
         if not _MRP_KEYWORD_RE.search(ln):
             continue
@@ -137,6 +166,13 @@ def _multiline_mrp(lines: list[str]) -> float | None:
             m = _MRP_LINE_AMT_RE.match(nxt)
             if m:
                 return _norm_num(m.group(1))
+        for prv in lines[max(0, i - 2) : i][::-1]:
+            left = _MRP_POISON_RE.split(prv)[0]
+            if not left.strip():
+                continue
+            m = re.search(r"(?:Rs\.?|INR|₹)?\s*([\d, ]+(?:\.\d{1,2})?)\s*:?\s*$", left)
+            if m and re.search(r"(?:Rs\.?|INR|₹)", left):
+                return _norm_num(m.group(1))
     return None
 
 
@@ -144,14 +180,16 @@ def _multiline_mrp(lines: list[str]) -> float | None:
 # (amount after MRP, digit runs in dates) — never to free text.
 _DIGIT_FIX_TABLE = str.maketrans({"O": "0", "o": "0", "l": "1", "I": "1", "S": "5", "s": "5", "B": "8"})
 _MRP_AMT_RE = re.compile(
-    r"((?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price)"
-    r"[\s()\-–—]{0,8}(?:Rs\.?|INR|₹|%)?[\s()\-–—]{0,8}:?\s*(?:Rs\.?|INR|₹|%)?\s*)"
-    r"([\dOolISsB,.]+(?:\.[\dOolISsB]{1,2})?)",
+    r"((?:MRP|M\.?R\.?P\.?|maximum\s*retail\s*price|retail\s*price|max[a-z]{2,5}\s+retail\s+price)"
+    r"[\s()\-–—|]{0,8}(?:Rs\.?|INR|₹|%)?[\s()\-–—|]{0,8}:?\s*(?:Rs\.?|INR|₹|%)?\s*)"
+    r"([\dOolISsB,. ]+(?:\.[\dOolISsB]{1,2})?)(?![A-Za-z])",
     re.IGNORECASE,
 )
 _DATE_TOKEN_RE = re.compile(r"\b([\dIlO]{1,2})[/\-.]([\dIlO]{1,2})[/\-.]([\dIlO]{2,4})\b")
 _MONTH_YEAR_RE = re.compile(r"\b([A-Za-z]{3,9})\s+(20\d{2})\b")
-_NETQTY_LINE_RE = re.compile(r"net\s*(?:q?t[yl]|quantity|wt|weight|vol|content|o?t?y)", re.IGNORECASE)
+_NETQTY_LINE_RE = re.compile(
+    r"(?:net|det|nct)\s*(?:q?t[yl]|quantity|wt|weight|vol|volume|content|o?t?y)", re.IGNORECASE
+)
 
 
 def _fix_month_tokens(text: str) -> str:
@@ -185,9 +223,10 @@ def _fix_qty_units(text: str) -> str:
             if _NETQTY_LINE_RE.search(ln):
                 ln = re.sub(r"(?<=\d)\s*9\b", " g", ln)
                 ln = re.sub(r"(?<=\d)\s*q\b", " g", ln, flags=re.IGNORECASE)
-            # Digit-glued unit typos ("250 mie", "500 mle") occur on any line;
+                ln = re.sub(r"(?<=\d)\s*(unt|unlt|unl|nit)\b", " unit", ln, flags=re.IGNORECASE)
+            # Digit-glued unit typos ("250 mie", "500 mle", "500 Mla") occur on any line;
             # the digit adjacency makes the repair safe outside net lines too.
-            ln = re.sub(r"(?<=\d)\s*(mie|mle|rnI)\b", " ml", ln)
+            ln = re.sub(r"(?<=\d)\s*(mla|mle|mie|rnI|m1)\b", " ml", ln, flags=re.IGNORECASE)
             out.append(ln)
         return "\n".join(out)
     except Exception:
@@ -255,7 +294,10 @@ def _parse_date(s: str) -> date | None:
     if m:
         s = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
     # Month names print joined by hyphens/slashes too ("MAY-24", "JAN/2025").
-    s = re.sub(r"(?<=[A-Za-z])[-/](?=\d)", " ", s)
+    # Skip when the string is already a full day-month-year ("30/AUG/26"):
+    # rewriting its separators would destroy a parseable date.
+    if not re.fullmatch(r"\d{1,2}[/\-.][A-Za-z]{3,9}[/\-.]\d{2,4}", s):
+        s = re.sub(r"(?<=[A-Za-z])[-/](?=\d)", " ", s)
     # Month names print uppercase on packs ("JAN 2025") but strptime %b/%B
     # wants title case — retry normalized.
     for cand in (s, s.title()):
@@ -286,7 +328,7 @@ def _parse_date(s: str) -> date | None:
 
 def _norm_num(s: str) -> float | None:
     try:
-        return float(s.replace(",", ""))
+        return float(s.replace(",", "").replace(" ", ""))
     except ValueError:
         return None
 
@@ -319,8 +361,15 @@ def _extract_qty(text: str) -> tuple[float | None, str | None]:
 
     Candidates are scoped to an 80/40-char window around the match: glued OCR
     (missing line breaks) would otherwise let one nutrition word poison a
-    genuine "250 ml" sitting far away on the same mega-line.
+    genuine "250 ml" sitting far away on the same mega-line. When the text
+    carries a nutrition table at all, unanchored candidates additionally need
+    an e-mark — bare table values ("33g" saturated fat) are never net quantity.
     """
+    table = bool(
+        re.search(
+            r"nutrition(al)?\s+information|per\s*100\s*g|%\s*RDA|valeurs?\s+nutrition", text, re.IGNORECASE
+        )
+    )
     cands: list[tuple[int, int, float, str]] = []  # (score, order, value, unit)
     order = 0
     for m in NET_QTY_RE.finditer(text):
@@ -331,6 +380,8 @@ def _extract_qty(text: str) -> tuple[float | None, str | None]:
     for m in NET_QTY_FALLBACK_RE.finditer(text):
         win = text[max(0, m.start() - 80) : m.end() + 40]
         if _NUTRITION_RE.search(win):
+            continue
+        if table and not re.search(r"\be\b", win):
             continue
         v = _qty_num(m.group(1))
         if v:
@@ -380,7 +431,15 @@ def _extract_manufacturer(lines: list[str]) -> tuple[str | None, str | None]:
         if re.search(r"\bas\s+per\s*$", ln[: m.start()], re.IGNORECASE):
             continue  # "Address as per Regd. Office" points elsewhere, not a declaration
         tail = ln[m.end() :].strip(" :-\t")
-        block = ([tail] if tail else []) + [x.strip() for x in lines[i + 1 : i + 5] if x.strip()]
+        pre = ln[: m.start()].strip(" ,:-\t")
+        if tail and not _MFR_ADDR_START_RE.search(tail):
+            block = ([tail] if tail else []) + [x.strip() for x in lines[i + 1 : i + 5] if x.strip()]
+        else:
+            # Address starts immediately (or empty tail): the company name may
+            # precede the anchor ("TTK PRESTIGE LTD., REGISTERED OFFICE : ...").
+            cand = pre if pre and not stop.search(pre) and len(pre) > 3 else ""
+            block = ([cand] if cand else []) + ([tail] if tail else [])
+            block += [x.strip() for x in lines[i + 1 : i + 5] if x.strip()]
         kept: list[str] = []
         for b in block:
             if kept and stop.search(b):
@@ -500,7 +559,7 @@ def _ner_refine(text: str, decl: ProductDeclaration) -> ProductDeclaration:
             decl.consumer_care is None
             and "CARE" in vals
             and re.search(
-                r"[\w+\-.]+ ?@ ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*",
+                r"[\w+\-.]+ ?@{1,2} ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*",
                 vals["CARE"],
                 re.IGNORECASE,
             )
@@ -598,6 +657,8 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
 
     m = ORIGIN_RE.search(text)
     origin = m.group(1).strip() if m else None
+    if origin and re.fullmatch(r"in[cd][iae]a?", origin, re.IGNORECASE):
+        origin = "India"  # OCR drops the 'd' ("inca", "indla") — still India
     imported = origin is not None and origin.lower() not in ("india",)
 
     # Heuristic: generic name = first text line with real wording that is NOT
@@ -616,26 +677,75 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             or ORIGIN_RE.search(ln)
             or INCL_TAXES_RE.search(ln)
             or _MFR_ANCHOR_RE.search(ln)
+            or re.search(r"\b(model(\s*(no|name))?|part\s*code|colou?r)\b", ln, re.IGNORECASE)
         )
 
-    generic = next(
-        (
-            ln[:120]
-            for ln in lines
-            if sum(c.isalpha() for c in ln) >= 3
-            and len(ln) <= 160  # glued OCR mega-lines are never a product name
-            and any(len(t) >= 3 for t in re.findall(r"[A-Za-z]+", ln))  # real word, not shards
-            and not _is_declaration_line(ln)
-            and not _GENERIC_SKIP_RE.search(ln)
-            and not _looks_like_measurement(ln)
-        ),
-        None,
-    )
+    generic_labeled: str | None = None
+    for i, ln in enumerate(lines):
+        m = re.search(r"(?:generic|common)\s*name\s*[:\-]\s*(.+)", ln, re.IGNORECASE)
+        if m and m.group(1).strip():
+            generic_labeled = m.group(1).strip()[:120]
+            break
+        m = re.match(r"^\s*contents\s*:\s*(.+?)\s*$", ln, re.IGNORECASE)
+        if m and m.group(1).strip():
+            val = m.group(1).strip()
+            if not (_is_declaration_line(val) or _looks_like_measurement(val) or _LONE_LABEL_RE.match(val)):
+                generic_labeled = val[:120]
+                break
+    candidates = [
+        ln[:120]
+        for ln in lines
+        if sum(c.isalpha() for c in ln) >= 3
+        and len(ln) <= 160  # glued OCR mega-lines are never a product name
+        and any(len(t) >= 3 for t in re.findall(r"[A-Za-z]+", ln))  # real word, not shards
+        and not _is_declaration_line(ln)
+        and not _GENERIC_SKIP_RE.search(ln)
+        and not _LONE_LABEL_RE.match(ln.strip())
+        and not _looks_like_measurement(ln)
+    ]
+    # Labeled generic wins ("Generic Name : Smart Watch"); else the first
+    # substantial line ("Wee!" shards and brand shouts sit above the real
+    # name); fall back to the first candidate ("Atta", "Tea").
+    generic = generic_labeled
+    if generic is None:
+        generic = next((ln for ln in candidates if sum(c.isalpha() for c in ln) >= 8), None)
+    if generic is None and candidates:
+        generic = candidates[0]
     mfr_name, mfr_addr = _extract_manufacturer(lines)
 
-    # Optional spaCy NER refinement (CPU): fills fields the regex missed using
-    # models/lmpc_ner trained by ml/train_ner.py. Never overrides a regex hit
-    # (regex is precise on standard formats); never raises — regex-only fallback.
+    # Provenance (Phase D): regex hits are "read" straight off the text.
+    # Optional spaCy NER refinement (CPU) fills the gaps below and is marked
+    # "inferred": models/lmpc_ner trained by ml/train_ner.py. Never overrides
+    # a regex hit (regex is precise on standard formats); never raises.
+    _TRACKED = (
+        "manufacturer_name",
+        "manufacturer_address",
+        "generic_name",
+        "net_quantity_value",
+        "net_quantity_unit",
+        "mrp",
+        "mfg_date",
+        "expiry_date",
+        "consumer_care",
+        "country_of_origin",
+    )
+    _regex_vals = {
+        "manufacturer_name": mfr_name,
+        "manufacturer_address": mfr_addr,
+        "generic_name": generic if generic and len(generic) > 2 else None,
+        "net_quantity_value": qty_val,
+        "net_quantity_unit": qty_unit,
+        "mrp": mrp_val,
+        "mfg_date": mfg,
+        "expiry_date": exp,
+        "consumer_care": care,
+        "country_of_origin": origin,
+    }
+    sources: dict[str, str] = {k: "read" for k, v in _regex_vals.items() if v is not None}
+    if incl_taxes:
+        sources["mrp_includes_taxes"] = "read"
+    if imported:
+        sources["is_imported"] = "read"
     decl = _ner_refine(
         text,
         ProductDeclaration(
@@ -653,6 +763,9 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             is_imported=imported,
         ),
     )
+    for _k in _TRACKED:
+        if getattr(decl, _k) is not None and _k not in sources:
+            sources[_k] = "inferred"  # spaCy NER filled a regex gap
 
     # Gazetteer canonicalization (deterministic, offline): repair a mangled
     # maker name ("Hindustan Uniiever" -> "Hindustan Unilever") or fill a
@@ -670,11 +783,120 @@ def extract_fields(ocr_text: str) -> ProductDeclaration:
             fixed, _score = fix_manufacturer(decl.manufacturer_name)
             if fixed and fixed.lower() not in decl.manufacturer_name.lower():
                 decl = _dc.replace(decl, manufacturer_name=fixed)
+                sources["manufacturer_name"] = "inferred"
         else:
             found, _score = fill_manufacturer(text)
             if found:
                 decl = _dc.replace(decl, manufacturer_name=found[:160])
+                sources["manufacturer_name"] = "inferred"
     except Exception:  # noqa: S110 — gazetteer is advisory; regex result always survives
         pass
 
-    return decl
+    import dataclasses as _dc2
+
+    return _dc2.replace(decl, field_sources=sources)
+
+
+def apply_confidence_sources(decl: ProductDeclaration, ocr_confidence: float | None) -> ProductDeclaration:
+    """Downgrade "read" to "uncertain" on weak reads (<60% OCR confidence).
+
+    A regex hit on a garbled read deserves a verify badge, not a read badge.
+    Inferred/AI/attested marks are left alone. Pure function, never raises.
+    """
+    try:
+        import dataclasses as _dc
+
+        if ocr_confidence is None or float(ocr_confidence) >= 60:
+            return decl
+        downgraded = {k: ("uncertain" if v == "read" else v) for k, v in (decl.field_sources or {}).items()}
+        return _dc.replace(decl, field_sources=downgraded)
+    except Exception:
+        return decl
+
+
+_DATE_SHAPE_RE = re.compile(
+    r"\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}[/\-]\d{1,2}|\d{1,2}[/\-]\d{2,4}"
+    r"|[A-Za-z]{3,9}[\s\-/]+\d{2,4}|\d{4}[/\-](?:19|20)\d{2}"
+)
+_MFG_ANCHOR_LINE_RE = re.compile(r"mfg|manufactur\w*|mfd|pkd|packed", re.IGNORECASE)
+_EXP_ANCHOR_LINE_RE = re.compile(r"exp|expiry|best\s*before|use\s*by", re.IGNORECASE)
+_MRP_ANCHOR_LINE_RE = re.compile(r"MRP|M\.?R\.?P\.?|maximum\s*retail\s*price", re.IGNORECASE)
+
+
+def extract_fields_with_layout(ocr_text: str, boxes: list | None = None) -> ProductDeclaration:
+    """extract_fields + visual-geometry rescue for fields the flat text missed.
+
+    Rebuilt visual rows fix what OCR line-breaks break: amounts sitting below
+    their keyword, date pairs glued onto one row, maker blocks in visual order.
+    Only fills gaps (never overrides a flat-text hit, except the paired-date
+    correction which mirrors the same-line rule). Never raises.
+    """
+    import dataclasses as _dc
+
+    decl = extract_fields(ocr_text)
+    try:
+        lines = build_lines(boxes)
+    except Exception:
+        return decl
+    if not lines:
+        return decl
+    try:
+        patch: dict = {}
+        if decl.mrp is None:
+            i = find_anchor(lines, r"MRP|M\.?R\.?P\.?|maximum\s*retail\s*price")
+            for ln in rows_below(lines, i, 2):
+                if _MRP_POISON_RE.search(ln.text) or _NUTRITION_RE.search(ln.text):
+                    continue
+                m = _MRP_LINE_AMT_RE.match(ln.text.strip())
+                if m:
+                    v = _norm_num(m.group(1))
+                    if v:
+                        patch["mrp"] = v
+                        break
+        if decl.mfg_date is None or decl.expiry_date is None:
+            cand_rows: list[str] = []
+            for pat in (_MFG_ANCHOR_LINE_RE, _EXP_ANCHOR_LINE_RE):
+                idx = -1
+                for j, ln in enumerate(lines):
+                    if pat.search(ln.text):
+                        idx = j
+                        break
+                if idx >= 0:
+                    cand_rows.append(lines[idx].text)
+                    cand_rows.extend(ln.text for ln in rows_below(lines, idx, 1))
+            seen: set[str] = set()
+            parsed: list = []
+            for row in cand_rows:
+                if _NUTRITION_RE.search(row):
+                    continue
+                for tok in _DATE_SHAPE_RE.findall(row):
+                    if tok in seen:
+                        continue
+                    seen.add(tok)
+                    d = _parse_date(tok)
+                    if d is not None:
+                        parsed.append(d)
+            mfg = decl.mfg_date
+            if mfg is None and parsed:
+                mfg = parsed[0]
+                patch["mfg_date"] = mfg
+            if decl.expiry_date is None and mfg is not None:
+                for d in parsed:
+                    if d > mfg:
+                        patch["expiry_date"] = d
+                        break
+        if decl.manufacturer_name is None:
+            visual = "\n".join(ln.text for ln in lines)
+            name, addr = _extract_manufacturer(visual.splitlines())
+            if name:
+                patch["manufacturer_name"] = name
+                if decl.manufacturer_address is None and addr:
+                    patch["manufacturer_address"] = addr
+        if not patch:
+            return decl
+        sources = dict(decl.field_sources or {})
+        for _k in patch:
+            sources.setdefault(_k, "inferred")  # layout rescued a flat-text gap
+        return _dc.replace(decl, **patch, field_sources=sources)
+    except Exception:
+        return decl

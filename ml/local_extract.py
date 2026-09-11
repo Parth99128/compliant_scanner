@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from app.services.extraction import extract_fields  # noqa: E402
+from app.services.extraction import apply_confidence_sources, extract_fields_with_layout  # noqa: E402
 from app.services.ocr import run_ocr, word_boxes  # noqa: E402
 from app.services.rule_engine import evaluate_compliance  # noqa: E402
 from app.services.vision import (  # noqa: E402
@@ -60,7 +60,8 @@ def extract_label(image_bytes: bytes, ppm: float | None = None) -> dict:
                     ocr_r = None
                 if ocr_r and ocr_r.text.strip() and ocr_r.confidence > ocr.confidence:
                     ocr, boxes, clean = ocr_r, word_boxes(upright, ocr_r.config), upright
-    decl = extract_fields(ocr.text)
+    decl = extract_fields_with_layout(ocr.text, boxes)
+    decl = apply_confidence_sources(decl, ocr.confidence)
     med_px = _median([float(b.h) for b in boxes]) if boxes else None
     font_mm = font_height_mm(med_px, ppm) if med_px and ppm else None
     med_ratio = _median([float(b.w) / float(b.h) for b in boxes if b.h > 0]) if boxes else None

@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { SourceBadge, sourceForRule } from "@/components/ui/ministry";
 import { ApiError, attestFinding, type Check } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -28,12 +29,16 @@ export function FindingRow({
   scanId,
   token,
   check,
+  declaration,
+  measured,
   onChanged,
   onError,
 }: {
   scanId: string;
   token: string;
   check: Check;
+  declaration?: Record<string, unknown>;
+  measured?: boolean;
   onChanged: () => void;
   onError: (e: unknown, fallback: string) => void;
 }): React.JSX.Element {
@@ -96,6 +101,7 @@ export function FindingRow({
         {check.manual && (
           <Badge tone="blue">manually set</Badge>
         )}
+        {!check.manual && <SourceBadge source={sourceForRule(check.rule_id, declaration, !!measured)} />}
       </div>
       <p className="mt-0.5 font-mono text-[11px] text-slate-500">{check.citation}</p>
       {check.status !== "PASS" && check.cause === "possible_miss" && (

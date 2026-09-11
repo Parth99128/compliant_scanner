@@ -3,6 +3,7 @@
 import Link from "next/link";
 import * as React from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -292,4 +293,57 @@ export function SegmentedControl<T extends string>({
       })}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* SourceBadge: Phase D provenance chip — how a declaration value was  */
+/* obtained. read = regex straight off the text; inferred = NER/       */
+/* gazetteer/layout filled a gap; ai_assist = second-opinion model;    */
+/* uncertain = weak read, verify; measured = Rule 7 spatial scale.     */
+/* ------------------------------------------------------------------ */
+
+const SOURCE_META: Record<string, { tone: "slate" | "amber" | "blue" | "green"; label: string }> = {
+  read: { tone: "slate", label: "Read" },
+  inferred: { tone: "amber", label: "Inferred · verify" },
+  ai_assist: { tone: "blue", label: "AI assist" },
+  uncertain: { tone: "amber", label: "Uncertain read" },
+  attested: { tone: "green", label: "Officer-set" },
+  measured: { tone: "blue", label: "Measured" },
+};
+
+const RULE_SOURCE_KEYS: Record<string, string[]> = {
+  "LMPC-6.1-manufacturer": ["manufacturer_name"],
+  "LMPC-6.1-generic": ["generic_name"],
+  "LMPC-6.1-netqty": ["net_quantity_value"],
+  "LMPC-6.1-mrp": ["mrp"],
+  "LMPC-6.1-dates": ["mfg_date", "expiry_date"],
+  "LMPC-6.1-care": ["consumer_care"],
+  "LMPC-6.1-origin": ["country_of_origin"],
+};
+
+const SOURCE_PRIORITY = ["attested", "ai_assist", "uncertain", "inferred", "read", "measured"] as const;
+
+export function sourceForRule(
+  ruleId: string,
+  declaration: Record<string, unknown> | undefined,
+  measured: boolean
+): string {
+  if (ruleId === "LMPC-7.2-numeral" || ruleId === "LMPC-7.3-letter" || ruleId === "LMPC-7.3-width") {
+    return measured ? "measured" : "";
+  }
+  const sources = (declaration?.["field_sources"] ?? {}) as Record<string, unknown>;
+  const keys = RULE_SOURCE_KEYS[ruleId] ?? [];
+  const found = keys
+    .map((k) => (typeof sources[k] === "string" ? (sources[k] as string) : ""))
+    .filter(Boolean);
+  for (const want of SOURCE_PRIORITY) {
+    if (found.includes(want)) return want;
+  }
+  return found[0] ?? "";
+}
+
+export function SourceBadge({ source }: { source: string }): React.JSX.Element | null {
+  const meta = SOURCE_META[source];
+  if (!meta) return null;
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }

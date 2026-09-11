@@ -4,7 +4,7 @@ from app.services.barcode import decode_positioned
 from app.services.florence import repair_spacing
 from app.services.vision import mask_quads
 
-PACK = "../data/real/backs/off_8902080000227_pack.jpg"
+PACK = "tests/fixtures/ean13_india.png"
 
 
 def _pack_bytes() -> bytes:

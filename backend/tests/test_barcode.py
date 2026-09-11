@@ -1,4 +1,4 @@
-"""Barcode GTIN stage: real decodes on OFF packaging photos + honesty guards."""
+"""Barcode GTIN stage: generated EAN-13 fixtures + honesty guards."""
 
 from fastapi.testclient import TestClient
 
@@ -6,8 +6,8 @@ from app.main import create_app
 from app.services.barcode import decode_gtins, prefix_country
 
 client = TestClient(create_app())
-PACK = "../data/real/backs/off_8902080000227_pack.jpg"
-PACK2 = "../data/real/backs/off_6111242100992_pack.jpg"
+PACK = "tests/fixtures/ean13_india.png"
+PACK2 = "tests/fixtures/ean13_morocco.png"
 
 
 def _pack_bytes(path: str) -> bytes:

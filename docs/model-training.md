@@ -30,6 +30,8 @@ is written next to every export for auditability.
 | Date | Model | n_synth | n_real | Synth P/R/F1 | Real P/R/F1 | Notes |
 |---|---|---|---|---|---|---|
 | 2026-09-03 | regex baseline (no NER) | 5 | 0 | n/a (rules) | no data | Phase-1 gate: 6–7/7 fields, <1.2s/image |
+| 2026-09-10 | extraction+layout (eval_real field acc.) | 15 photos | 7 backs, hand-labeled | 89/105 fields, 14/15 verdicts | 43/47 fields (91.5%) | A–F accuracy program; TrOCR/Gemini/VLM gated assists off in this number |
+| 2026-09-11 | extraction v2, phone-photo set | 15 photos | 10 phone backs, hand-labeled (OFF set retired) | 89/105 fields, 14/15 verdicts | 38/69 fields (55.1%) | Real Indian labels: remaining misses are OCR-recall (ink-jet/scratched/vertical strips), not parser gaps; Gemini-vision probe recovers Suhana fully |
 | — | `lmpc_ner` v1 | — | — | — | no real data yet | pending volume training run |
 
 Fill the next row when the volume run completes. Do NOT report a blended

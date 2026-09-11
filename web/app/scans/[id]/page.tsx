@@ -10,7 +10,7 @@ import { FindingRow, EDITABLE_RULES } from "@/components/finding-row";
 import { AlertDestructive } from "@/components/ui/alert";
 import { Badge, VerdictBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Hero, Panel } from "@/components/ui/ministry";
+import { Hero, Panel, SourceBadge, sourceForRule } from "@/components/ui/ministry";
 import { useToast } from "@/components/ui/toaster";
 import { ApiError, explainScan, fetchBlob, getScan, reviewScan, updateFields, updateProduct, type Check, type FieldCorrections, type FrameInfo, type ScanDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,15 @@ function verdictTitle(v: string): string {
   return "Non-compliant";
 }
 
-function RuleCard({ check }: { check: Check }): React.JSX.Element {
+function RuleCard({
+  check,
+  declaration,
+  measured,
+}: {
+  check: Check;
+  declaration?: Record<string, unknown>;
+  measured?: boolean;
+}): React.JSX.Element {
   const tone =
     check.status === "PASS"
       ? "border-green-300 bg-green-50/50"
@@ -45,6 +53,7 @@ function RuleCard({ check }: { check: Check }): React.JSX.Element {
         {check.cause === "possible_miss" && <Badge tone="amber">Needs verification — may be our miss</Badge>}
         {check.cause === "likely_genuine" && <Badge tone="red">Likely violation — verify</Badge>}
         {check.cause === "disputed" && <Badge tone="red">Disputed by officer</Badge>}
+        {!check.manual && <SourceBadge source={sourceForRule(check.rule_id, declaration, !!measured)} />}
       </div>
       <p className="mt-0.5 text-xs text-slate-500">{check.citation}</p>
       <p className="mt-1.5 text-[13px]">{check.message}</p>
@@ -678,6 +687,12 @@ export default function ScanDetailPage(): React.JSX.Element {
             </div>
             <div className="px-5 pb-4">
             <p className="mb-3 text-xs text-slate-500">Correct a mis-read value or mark a declaration present. Amber cards need measurement — never passes.</p>
+            <p className="mb-3 text-[11px] leading-relaxed text-slate-400">
+              Source badges — <strong>Read</strong>: taken straight off the label text ·
+              <strong> Inferred</strong>: model or directory filled a gap, verify ·
+              <strong> AI assist</strong>: second-opinion model supplied it ·
+              <strong> Uncertain</strong>: weak read, verify.
+            </p>
             {editingFields ? (
               <div className="mb-3 rounded-md border border-sky-300 bg-sky-50/50 p-3">
                 <p className="mb-2 text-xs font-semibold text-sky-900">
@@ -762,6 +777,8 @@ export default function ScanDetailPage(): React.JSX.Element {
                     scanId={id}
                     token={session.token}
                     check={r}
+                    declaration={d.declaration}
+                    measured={d.font_height_mm != null}
                     onChanged={() => {
                       void queryClient.invalidateQueries({ queryKey: ["scan", id] });
                       void queryClient.invalidateQueries({ queryKey: ["scans"] });
@@ -776,7 +793,12 @@ export default function ScanDetailPage(): React.JSX.Element {
               {d.results
                 .filter((r) => !EDITABLE_RULES.has(r.rule_id))
                 .map((r, i) => (
-                  <RuleCard key={`${r.rule_id}-${i}`} check={r} />
+                  <RuleCard
+                    key={`${r.rule_id}-${i}`}
+                    check={r}
+                    declaration={d.declaration}
+                    measured={d.font_height_mm != null}
+                  />
                 ))}
             </div>
             )}

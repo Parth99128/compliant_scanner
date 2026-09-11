@@ -76,10 +76,12 @@ def score_row(decl: dict, truth: dict, absent: list[str]) -> dict[str, tuple[boo
             )
 
     if "manufacturer_sub" in truth:
-        want = str(truth["manufacturer_sub"]).lower()
+        wants = truth["manufacturer_sub"]
+        wants = [wants] if isinstance(wants, str) else list(wants)
         blob = f"{decl.get('manufacturer_name') or ''} {decl.get('manufacturer_address') or ''}".lower()
+        hit = any(str(w).lower() in blob for w in wants)
         out["manufacturer"] = (
-            want in blob,
+            hit,
             f"got {(decl.get('manufacturer_name') or '')[:50]!r}",
         )
     elif "manufacturer" in absent:

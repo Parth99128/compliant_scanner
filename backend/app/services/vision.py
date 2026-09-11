@@ -21,17 +21,21 @@ def _dnn_upscale(gray: object, scale: int = 2) -> object | None:
         import cv2  # type: ignore
     except ImportError:
         return None
+    from pathlib import Path as _Path
+
+    roots = [os.getcwd(), str(_Path(__file__).resolve().parents[3])]
     for name, model in (("espcn", "ESPCN_x2.pb"), ("fsrcnn", "FSRCNN_x2.pb")):
-        path = os.path.join("models", model)
-        if not os.path.exists(path):
-            continue
-        try:
-            sr = cv2.dnn_superres.DnnSuperResImpl_create()  # type: ignore[attr-defined]
-            sr.readModel(path)
-            sr.setModel(name, scale)
-            return sr.upsample(gray)  # type: ignore[no-any-return]
-        except Exception:
-            continue
+        for root in dict.fromkeys(roots):
+            path = os.path.join(root, "models", model)
+            if not os.path.exists(path):
+                continue
+            try:
+                sr = cv2.dnn_superres.DnnSuperResImpl_create()  # type: ignore[attr-defined]
+                sr.readModel(path)
+                sr.setModel(name, scale)
+                return sr.upsample(gray)  # type: ignore[no-any-return]
+            except Exception:
+                continue
     return None
 
 

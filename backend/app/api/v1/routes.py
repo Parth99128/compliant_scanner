@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import json
 import os
+import re
 import traceback
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -34,7 +35,10 @@ from app.schemas.schemas import (
     WordBoxOut,
 )
 from app.services.barcode import decode_gtins, decode_positioned, prefix_country
-from app.services.extraction import extract_fields
+from app.services.extraction import (
+    apply_confidence_sources,
+    extract_fields_with_layout,
+)
 from app.services.llm import LlmError, LlmNotConfigured, build_explain_prompt, explain_with_gemini
 from app.services.ocr import run_ocr, word_boxes
 from app.services.report import build_report_pdf
@@ -547,6 +551,88 @@ class _PipelineOut:
     resolved_ppm: float | None = None
 
 
+def _digits_grounded(value: object, ocr_text: str | None) -> bool:
+    """Money/quantity AI fills must occur verbatim in the printed digits.
+
+    Catches model hallucinations ("96" for a printed "95"): the value's digit
+    run must be a substring of the OCR digit stream. Pure function.
+    """
+    try:
+        digits = re.sub(r"\D", "", f"{float(value):g}")  # type: ignore[arg-type]
+        stream = re.sub(r"\D", "", ocr_text or "")
+        return bool(digits) and digits in stream
+    except (TypeError, ValueError):
+        return False
+
+
+_HEADING_FILL_RE = re.compile(
+    r"customer|consumer|contents|ingredients|nutrition|warning|directed|instruction"
+    r"|marketed|manufactured|licensed|licence|store\b",
+    re.IGNORECASE,
+)
+_CARE_FILL_RE = re.compile(
+    r"customer|consumer|helpline|toll|marketed|manufactured|licensed|licence|store\b",
+    re.IGNORECASE,
+)
+_CONTACT_EVIDENCE_RE = re.compile(
+    r"[\w+\-.]+ ?@{1,2} ?[a-z\d\-.]+ ?\.[a-z]{2,}|\+?91[\s\-]*\d[\d\s\-]{4,}|1800[\s\-]*\d[\d\s\-]*",
+    re.IGNORECASE,
+)
+
+
+def _looks_heading(value: object) -> bool:
+    """True when an AI text fill is a section heading, not a declaration value
+    ("For Consumer Care Contact Manager-..."). Pure function."""
+    return bool(value) and bool(_HEADING_FILL_RE.search(str(value)))
+
+
+def _apply_llm_fill(
+    decl: ProductDeclaration, patch: dict, ocr_text: str | None
+) -> tuple[ProductDeclaration, list[str]]:
+    """Merge an AI-extracted patch into a declaration, gap-only and guarded.
+
+    Guards (each rejection is logged): numerics must occur in the printed
+    digits; generic/maker fills must not be section headings; care fills need
+    contact evidence; date pairs must be chronological. Accepted fills are
+    marked "ai_assist" provenance. Pure apart from logging; never raises.
+    """
+    try:
+        fill = {
+            k: v
+            for k, v in (patch or {}).items()
+            if getattr(decl, k, None) in (None, "", False) and v not in (None, "", False)
+        }
+        for _num_field in ("mrp", "net_quantity_value"):
+            if _num_field in fill and not _digits_grounded(fill[_num_field], ocr_text):
+                log.info("llm_fill_rejected_ungrounded", field=_num_field, value=fill[_num_field])
+                fill.pop(_num_field, None)
+        if "generic_name" in fill and _looks_heading(fill["generic_name"]):
+            log.info("llm_fill_rejected_heading", field="generic_name", value=fill["generic_name"])
+            fill.pop("generic_name", None)
+        for _mkr_field in ("manufacturer_name", "manufacturer_address"):
+            if _mkr_field in fill and _CARE_FILL_RE.search(str(fill[_mkr_field])):
+                log.info("llm_fill_rejected_heading", field=_mkr_field, value=fill[_mkr_field])
+                fill.pop(_mkr_field, None)
+        if "consumer_care" in fill and not _CONTACT_EVIDENCE_RE.search(str(fill["consumer_care"])):
+            log.info("llm_fill_rejected_no_contact", value=fill["consumer_care"])
+            fill.pop("consumer_care", None)
+        if (
+            isinstance(fill.get("mfg_date"), date)
+            and isinstance(fill.get("expiry_date"), date)
+            and fill["expiry_date"] <= fill["mfg_date"]
+        ):
+            fill.pop("mfg_date", None)
+            fill.pop("expiry_date", None)
+        if not fill:
+            return decl, []
+        sources = dict(decl.field_sources or {})
+        for _k in fill:
+            sources.setdefault(_k, "ai_assist")
+        return dataclasses.replace(decl, **fill, field_sources=sources), sorted(fill)
+    except Exception:
+        return decl, []
+
+
 def _run_pipeline(
     raw: bytes,
     ppm: float | None,
@@ -602,7 +688,8 @@ def _run_pipeline(
                     ocr2 = None
                 if ocr2 and ocr2.text.strip() and ocr2.confidence > ocr.confidence:
                     ocr, boxes, clean = ocr2, ocr2.boxes or word_boxes(clean2, ocr2.config), clean2
-    decl = extract_fields(ocr.text)
+    decl = extract_fields_with_layout(ocr.text, boxes)
+    decl = apply_confidence_sources(decl, ocr.confidence)
     # Spatial calibration: explicit ppm wins, else auto-detect reference card.
     resolved_ppm = ppm if (ppm and ppm > 0) else detect_ppm_from_reference_card(raw)
     px = font_px
@@ -631,6 +718,46 @@ def _run_pipeline(
             panel_area_cm2=panel_area_cm2,
         )
     report = evaluate_compliance(decl, ocr_confidence=ocr.confidence)
+    # AI second-opinion extraction (optional, billed per call): weak or
+    # incomplete reads only. Fills MISSING fields; local hits (regex/NER/
+    # layout) always win. Every AI-supplied value is named in warnings.
+    try:
+        from app.services.llm import LlmError, LlmNotConfigured, extract_with_gemini
+
+        provider = get_settings().llm_provider.lower()
+        keyed = bool(get_settings().gemini_api_key)
+        weak = ocr.confidence is not None and ocr.confidence < 75
+        gaps = any(
+            r.status in (Status.FAIL, Status.NOT_FOUND)
+            and r.rule_id
+            in (
+                "LMPC-6.1-mrp",
+                "LMPC-6.1-dates",
+                "LMPC-6.1-manufacturer",
+                "LMPC-6.1-care",
+                "LMPC-6.1-netqty",
+                "LMPC-6.1-generic",
+            )
+            for r in report.results
+        )
+        if provider in ("gemini", "gemma") and keyed and (weak or gaps):
+            try:
+                patch, model = extract_with_gemini(ocr.text, ocr.confidence, clean)
+            except (LlmNotConfigured, LlmError):
+                patch, model = {}, ""
+            decl, filled = _apply_llm_fill(decl, patch, ocr.text)
+            if filled:
+                report = evaluate_compliance(decl, ocr_confidence=ocr.confidence)
+                report = dataclasses.replace(
+                    report,
+                    warnings=[
+                        *report.warnings,
+                        f"AI second opinion ({model}) supplied: {', '.join(filled)}"
+                        + " — verify on the physical package.",
+                    ],
+                )
+    except Exception:  # noqa: S110 — assist is advisory; local result always survives
+        pass
     # Barcode identity cross-check (INFO only): GTIN + GS1 prefix country.
     # Never changes the verdict — barcodes don't encode declarations.
     try:
@@ -639,6 +766,23 @@ def _run_pipeline(
         gtins = []
     if gtins:
         report = dataclasses.replace(report, results=[*report.results, *_gtin_cards(gtins)])
+        # Public-record second opinion: OFF often knows this barcode's name
+        # and quantity. Warning only — the officer decides, never an overwrite.
+        try:
+            from app.services.off_lookup import cross_check_warning, lookup_by_barcode
+
+            if get_settings().off_lookup_enabled.lower() == "true":
+                record = lookup_by_barcode(gtins[0].get("text", ""))
+                qty_text = (
+                    f"{decl.net_quantity_value:g} {decl.net_quantity_unit}"
+                    if decl.net_quantity_value and decl.net_quantity_unit
+                    else None
+                )
+                note = cross_check_warning(record, decl.generic_name, qty_text)
+                if note:
+                    report = dataclasses.replace(report, warnings=[*report.warnings, note])
+        except Exception:  # noqa: S110 — cross-check is advisory; local result always survives
+            pass
     coord_w, coord_h = _clean_dims(clean)
     return _PipelineOut(
         ocr_text=ocr.text,
@@ -909,7 +1053,9 @@ async def _process_merge_scan(
     best_i = max(range(len(outs)), key=lambda i: (outs[i].ocr_confidence, len(outs[i].ocr_text)))
     best = outs[best_i]
     merged_text, added = _merge_ocr_lines([(i, o.ocr_confidence, o.ocr_text) for i, o in enumerate(outs)])
-    merged_decl = extract_fields(merged_text)
+    # Best-frame geometry guides neighbor search over the union text; when the
+    # best frame lacks those rows the flat-text result stands unchanged.
+    merged_decl = extract_fields_with_layout(merged_text, best.boxes)
     # Measure on the strongest CALIBRATED frame (scale + words), not blindly
     # the best read — a sharp macro with no card must not overrule a wide
     # shot carrying the millimetre scale.
@@ -1209,6 +1355,11 @@ def update_fields(
         decl = dataclasses.replace(base, **patch)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"Bad field value: {exc}")
+    sources = dict(decl.field_sources or {})
+    for _k in patch:
+        if _k in EDITABLE_FIELDS:
+            sources[_k] = "attested"  # officer-set values carry officer provenance
+    decl = dataclasses.replace(decl, field_sources=sources)
     report = evaluate_compliance(decl, ocr_confidence=rec.ocr_confidence)
     rec.declaration_json = _decl_snapshot(decl)
     machine = [dataclasses.asdict(r) for r in report.results]

@@ -83,6 +83,11 @@ class ProductDeclaration:
     is_embossed: bool = False
     panel_area_cm2: float | None = None
     min_width_to_height_ratio: float | None = None
+    # Provenance per field (Phase D): how each declaration value was obtained.
+    # "read" (regex straight off the text) | "inferred" (NER/gazetteer/layout
+    # filled a gap) | "ai_assist" (second-opinion model) | "uncertain" (weak
+    # read) | "attested" (officer-set). Missing fields carry no entry.
+    field_sources: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

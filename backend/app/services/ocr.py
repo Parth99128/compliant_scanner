@@ -116,6 +116,56 @@ def _tesseract(image_bytes: bytes) -> OcrResult | None:
         return None
 
 
+def _apply_row_repairs(result: OcrResult, repaired: list) -> OcrResult:
+    """Splice validated TrOCR row re-reads into boxes + text.
+
+    Repaired rows replace their member words with one union box carrying the
+    new text; remaining rows keep original geometry. Text is rebuilt from
+    visual-row geometry so line-scoped extraction keeps working. No-op on
+    any shape mismatch. Never raises.
+    """
+    try:
+        if not repaired or not result.boxes:
+            return result
+        drop: set[int] = set()
+        new_boxes: list[WordBox] = []
+        for idxs, union, text in repaired:
+            if not text or not idxs:
+                continue
+            if any(i < 0 or i >= len(result.boxes) for i in idxs):
+                continue
+            drop.update(idxs)
+            try:
+                new_boxes.append(
+                    WordBox(
+                        text=str(text),
+                        x=int(union.get("x", 0)),
+                        y=int(union.get("y", 0)),
+                        w=int(union.get("w", 0)),
+                        h=int(union.get("h", 0)),
+                        confidence=float(union.get("confidence", 0.0)),
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+        if not new_boxes:
+            return result
+        kept = [b for i, b in enumerate(result.boxes) if i not in drop]
+        result.boxes[:] = kept + new_boxes
+        try:
+            from app.services.layout import build_lines
+
+            lines = build_lines(result.boxes)
+            if lines:
+                result.text = "\n".join(ln.text for ln in lines).strip() or result.text
+        except Exception:  # noqa: S110 — keep pre-repair text when regrouping fails
+            pass
+        result.engine = "tesseract+trocr"
+        return result
+    except Exception:
+        return result
+
+
 def _mean_confidence(image_bytes: bytes, config: str = "--oem 3 --psm 3") -> float:
     """Mean word confidence (0-100); 0.0 when unavailable. Never raises."""
     try:
@@ -169,6 +219,26 @@ def run_ocr(image_bytes: bytes) -> OcrResult:
                 break
         except Exception:
             continue
+    # TrOCR row repair (optional, local CPU transformer): re-read weak,
+    # cue-carrying rows whose text does not parse — accepted only when the
+    # re-read DOES parse as an MRP amount, date or quantity. Strong reads
+    # (>=75%) skip it entirely; empty reads have nothing to align.
+    # Confidence stays conservative (never revised up).
+    if primary and primary.text.strip() and primary.confidence < 75 and primary.boxes:
+        try:
+            from app.services.trocr import is_enabled as _tr_enabled
+            from app.services.trocr import repair_rows as _tr_rows
+        except Exception:
+            _tr_enabled = None  # type: ignore[assignment]
+            _tr_rows = None  # type: ignore[assignment]
+        if _tr_enabled is not None and _tr_enabled():
+            try:
+                assert _tr_rows is not None
+                rows = _tr_rows(image_bytes, primary.boxes)
+            except Exception:
+                rows = []
+            if rows:
+                primary = _apply_row_repairs(primary, rows)
     try:
         from app.services.florence import is_enabled as _fl_enabled
         from app.services.florence import run_florence_ocr as _fl_ocr
@@ -190,6 +260,30 @@ def run_ocr(image_bytes: bytes) -> OcrResult:
             )
         ):
             return alt
+    # Generic local VLM (optional, slower): same acceptance rule as Florence-2.
+    # Consulted only when enabled AND the read is still weak or empty.
+    if primary is None or not primary.text.strip() or primary.confidence < 60:
+        try:
+            from app.services.vlm import is_enabled as _vlm_enabled
+            from app.services.vlm import run_vlm_ocr as _vlm_ocr
+        except Exception:  # VLM adapter missing/broken -> skip silently
+            _vlm_enabled = None  # type: ignore[assignment]
+            _vlm_ocr = None  # type: ignore[assignment]
+        if _vlm_enabled is not None and _vlm_enabled():
+            try:
+                valt = _vlm_ocr(image_bytes)
+            except Exception:
+                valt = None
+            if (
+                valt
+                and valt.text
+                and (
+                    primary is None
+                    or primary.text.strip() == ""
+                    or (primary.confidence < 60 and len(valt.text) > len(primary.text))
+                )
+            ):
+                return valt
     if primary and primary.text:
         return primary
     return OcrResult(text="", engine="none", confidence=0.0)

@@ -81,6 +81,57 @@ def test_mrp_parens_form():
     assert d.mrp == 14.0
 
 
+def test_mrp_spaced_thousands():
+    d = extract_fields("MAXIMUM RETAIL PRICE : \u20b9 4 815.00\nMONTH & YEAR MANUFACTURED :")
+    assert d.mrp == 4815.0
+    # Amount must not bleed into following words.
+    d2 = extract_fields("MRP Rs. 12O Inclusive of all taxes")
+    assert d2.mrp == 120.0 and d2.mrp_includes_taxes
+
+
+def test_net_anchor_ocr_variants_and_unit_typos():
+    d = extract_fields("DET VOLUME : 500 Mla")
+    assert (d.net_quantity_value, d.net_quantity_unit) == (500.0, "ml")
+    d2 = extract_fields("Net Quantity: 1Unt")
+    assert (d2.net_quantity_value, d2.net_quantity_unit) == (1.0, "unit")
+
+
+def test_nutrition_table_blocks_bare_values():
+    d = extract_fields("NUTRITIONAL INFORMATION\nSaturated Fat\n33g\nNet Qty: 250 ml")
+    assert (d.net_quantity_value, d.net_quantity_unit) == (250.0, "ml")
+    d2 = extract_fields("NUTRITIONAL INFORMATION\nSaturated Fat\n33g")
+    assert d2.net_quantity_value is None
+
+
+def test_day_month_year_dates():
+    d = extract_fields("Pkd:30/AUG/26\nExp:14/OCT/26")
+    assert d.mfg_date is not None and (d.mfg_date.year, d.mfg_date.month, d.mfg_date.day) == (2026, 8, 30)
+    assert d.expiry_date is not None and (d.expiry_date.year, d.expiry_date.month, d.expiry_date.day) == (
+        2026,
+        10,
+        14,
+    )
+
+
+def test_labeled_generic_and_lone_labels():
+    d = extract_fields("Training Modes : Walking\nGeneric Name : Smart Watch\nColour : Gold")
+    assert d.generic_name == "Smart Watch"
+    d2 = extract_fields("CONTENTS\nNET QUANTITY\nMAXIMUM RETAIL PRICE")
+    assert d2.generic_name is None
+
+
+def test_care_double_at_and_origin_typo():
+    d = extract_fields("Telephone Number 022-69089811 Email heip@@bortt.com")
+    assert d.consumer_care and "heip" in d.consumer_care
+    d2 = extract_fields("Country of Origin inca")
+    assert d2.country_of_origin == "India" and not d2.is_imported
+
+
+def test_mrp_backward_amount_before_keyword():
+    d = extract_fields("10/08/26 09/08/27 \u20b950.00:\nMRP Rs. \u20b9(incl. of all taxes)")
+    assert d.mrp == 50.0
+
+
 def test_mrp_multiline_amount_next_line():
     d = extract_fields("MRP Rs.\nRs. 50.00\nUSP Rs. 1.00/g")
     assert d.mrp == 50.0
