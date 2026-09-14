@@ -1,0 +1,100 @@
+name: android-apk
+
+# Builds a test APK for the Expo mobile app WITHOUT EAS cloud builds.
+# Local `npx expo prebuild` generates android/, then Gradle assembles the APK.
+# Run: GitHub repo → Actions → android-apk → Run workflow → download artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Public backend URL baked into the APK (e.g. https://xxxx.ngrok-free.app). Still editable in-app via Settings."
+        required: false
+        default: "https://CHANGE-ME.ngrok-free.app"
+      build_type:
+        description: "debug = installs anywhere, no signing setup. release = needs keystore secrets."
+        required: false
+        default: "debug"
+        type: choice
+        options:
+          - debug
+          - release
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform + build-tools
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager --licenses < /dev/null || true
+          yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Bake API URL into app.json (optional)
+        if: ${{ github.event.inputs.api_url != '' }}
+        run: node -e "const fs=require('fs');const p='app.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.expo.extra={...(j.expo.extra||{}),apiUrl:process.env.API_URL};fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('apiUrl =',j.expo.extra.apiUrl)"
+        env:
+          API_URL: ${{ github.event.inputs.api_url }}
+
+      - name: Expo prebuild (generate android/)
+        run: npx expo prebuild --platform android --clean --non-interactive
+
+      - name: Gradle assemble (debug)
+        if: ${{ github.event.inputs.build_type != 'release' }}
+        run: |
+          chmod +x android/gradlew
+          android/gradlew assembleDebug --no-daemon -p android
+
+      - name: Gradle assemble (release)
+        if: ${{ github.event.inputs.build_type == 'release' }}
+        run: |
+          chmod +x android/gradlew
+          android/gradlew assembleRelease --no-daemon -p android
+
+      - name: Upload debug APK
+        if: ${{ github.event.inputs.build_type != 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrishtiLM-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK/AAB
+        if: ${{ github.event.inputs.build_type == 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrishtiLM-release
+          path: |
+            mobile/android/app/build/outputs/apk/release/*.apk
+            mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
