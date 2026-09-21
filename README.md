@@ -71,6 +71,6 @@ npx tsc --noEmit                       # from web/
 - `web/` Next.js dashboard, `docs/` architecture/api-contract/rule-mapping/deployment/model-training
 - `docs/legal-source/` official Rules 2011 PDF (ground truth for Rule 7 citations)
 
-Rule 7 citations are verified against the Gazette mirror (`Verified: YES`);
+Rule 7 citations are verified against Gazette mirror (`Verified: YES`);
 other citations derive from the hackathon problem statement (`Verified: NO`) —
 see `docs/rule-mapping.md` before any enforcement use.
