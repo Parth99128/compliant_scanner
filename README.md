@@ -17,7 +17,7 @@ docker compose up --build
 
 - Backend Swagger: http://localhost:8000/docs
 - Dashboard: http://localhost:3000
-- Compose fails fast if `JWT_SECRET` is missing (by design — no default secrets in prod).
+- Compose fails fast if `JWT_SECRET` is missing (by design — no default secrets in prodion).
 
 ### Option B — Local backend (SQLite fallback)
 
